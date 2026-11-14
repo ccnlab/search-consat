@@ -1,0 +1,31 @@
+GPU = true
+#GPU = false
+
+[Run]
+	NData = 10
+#	NData = 1
+	Trials = 512
+	TestInterval = 10
+	StartWeights = "../ConSat_Base_000_000_00500.wts.gz"
+
+[Params]
+	Script = '''
+sim.Sim.Params.Layer["Script"] = &axon.LayerSheet{
+	&axon.LayerSel{Sel: "#Input", Set: func(ly *axon.LayerParams) {
+		ly.Acts.Clamp.Ge = 2.5
+		ly.Inhib.Layer.Gi = 1.3
+		ly.Inhib.Pool.Gi = 1.3
+	}},
+}
+sim.Sim.Params.Path["Script"] = &axon.PathSheet{
+	&axon.PathSel{Sel:"Path", Set: func(pt *axon.PathParams) {
+		pt.Learn.LRate.Base = 0.05
+	}},
+	&axon.PathSel{Sel: "#EncodeToInput", Set: func(pt *axon.PathParams) {
+		pt.PathScale.Rel = 0.1
+	}},
+}
+'''
+
+# [Env.Env]
+#	ValueSigma = 0.5

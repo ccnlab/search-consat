@@ -28,6 +28,7 @@ require (
 	github.com/cogentcore/typesetting v0.0.0-20261022123550-2cd93a91580e // indirect
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/dlclark/regexp2/v2 v2.7.1 // indirect
+	github.com/emer/egomlx v0.1.0 // indirect
 	github.com/ericchiang/css v1.4.0 // indirect
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260628091122-0bd588dc30cf // indirect
 	github.com/gobwas/glob v0.2.3 // indirect

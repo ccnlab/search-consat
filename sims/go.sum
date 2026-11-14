@@ -52,6 +52,8 @@ github.com/dlclark/regexp2/v2 v2.7.1 h1:yqDtwI1ptXXvEUNpYTk2lad4jLtAcKqkzepn4sav
 github.com/dlclark/regexp2/v2 v2.7.1/go.mod h1:avUrQvPaLz2DrFNHJF0taWAFFX2C1GMSSoeiqFjcBmU=
 github.com/emer/axon/v2 v2.0.9 h1:3gDUhnHBSdPYQAd7WOmT+BvfOnYmstq4MuvHoAQoeNE=
 github.com/emer/axon/v2 v2.0.9/go.mod h1:1m+HNlrM4Bvv+UQgTLdN1W6yN8IaZyF25DHwMaajXwM=
+github.com/emer/egomlx v0.1.0 h1:MMHiNFsRPX2Ta3uLggzeEy2weIo9EJ7CiGzlGiOsFnA=
+github.com/emer/egomlx v0.1.0/go.mod h1:vy+Rc9PEZrIgOEZAxz2BMkrTs16c5CNBn+gkFT1jsNI=
 github.com/emer/emergent/v2 v2.0.3 h1:6etBqD76TLXeIUaz5SNSZYLdifYlp70QZOrL75pYH2g=
 github.com/emer/emergent/v2 v2.0.3/go.mod h1:Y+87wkBb9KjHcOg1tYoJu+E/kSw3Vtk/RCORZTcboaA=
 github.com/ericchiang/css v1.4.0 h1:OlkWiPGHZpWIthKa2YBSAh00XwOT1PUtaoye9bKkTqw=

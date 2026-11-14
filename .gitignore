@@ -46,3 +46,6 @@ weights_*.json
 results/
 simdata
 simmer.json
+
+# Local config files for experimentation: config.go defaults hold the good values
+sims/**/config*.toml

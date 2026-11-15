@@ -74,7 +74,7 @@ func (ss *Sim) StatSampling() func(mode Modes, level Levels, start bool) {
 				tsr.SetNumRows(0)
 				plot.SetFirstStyler(tsr, func(s *plot.Style) {
 					s.Range.SetMin(0).SetMax(1)
-					s.On = name != "SalErr"
+					s.On = (name != "SalErr" && name != "Value")
 				})
 				metadata.SetDoc(tsr, samplingDocs[name])
 			}

@@ -58,19 +58,18 @@ type PCombEnv struct {
 	// States are the named state tensors.
 	States map[string]*tensor.Float32
 
-	// Items are the item indexes for this env, for each number
-	// of active cues starting at NActive.Min. Test envs get
-	// non-overlapping subsets of the test items for each Di.
-	Items [][]int
+	// Items are the training or (distinct value) testing items for this env.
+	Items ItemSet
 
-	// Order is the permuted order of Items, permuted after each pass.
-	Order [][]int
-
-	// Ctr is the current position in Order for each number of active cues.
-	Ctr []int
+	// AgreeItems are the agreement items (with repeated values) for testing,
+	// used on AgreePct of test trials, if DistinctTrain is set.
+	AgreeItems ItemSet
 
 	// Item is the current item index into the item space.
 	Item int
+
+	// Agree is true if the current item has repeated cue values.
+	Agree bool
 
 	// Slots are the cues in each input slot for the current trial;
 	// P = -1 for inactive slots.
@@ -123,23 +122,87 @@ func (ev *PCombEnv) Init(run int) {
 	randx.InitSysRand(&ev.Rand, ev.RunRandSeed*(int64(run)+1))
 	ev.Trial.Init()
 	sp := cfg.Space()
-	src := sp.Train
 	if ev.Test {
-		src = sp.Test
+		ev.Items.Init(ev, sp.Test)
+		ev.AgreeItems.Init(ev, sp.Agree)
+	} else {
+		ev.Items.Init(ev, sp.Train)
+		ev.AgreeItems.Init(ev, nil)
 	}
+}
+
+// ItemSet is a set of items with a permuted order for presenting them,
+// organized by number of active cues.
+type ItemSet struct {
+	// Items are the item indexes, for each number of active cues
+	// starting at NActive.Min. Test envs get non-overlapping subsets
+	// of the test items for each Di.
+	Items [][]int
+
+	// Order is the permuted order of Items, permuted after each pass.
+	Order [][]int
+
+	// Ctr is the current position in Order for each number of active cues.
+	Ctr []int
+}
+
+// Init initializes the item set from given source items.
+func (is *ItemSet) Init(ev *PCombEnv, src [][]int) {
 	nn := len(src)
-	ev.Items = make([][]int, nn)
-	ev.Order = make([][]int, nn)
-	ev.Ctr = make([]int, nn)
+	is.Items = make([][]int, nn)
+	is.Order = make([][]int, nn)
+	is.Ctr = make([]int, nn)
 	for k, its := range src {
 		if ev.Test && ev.NData > 1 {
 			neven := len(its) / ev.NData
 			its = its[neven*ev.Di : neven*(ev.Di+1)]
 		}
-		ev.Items[k] = its
-		ev.Order[k] = ev.Rand.Perm(len(its))
-		ev.Ctr[k] = -1
+		is.Items[k] = its
+		is.Order[k] = ev.Rand.Perm(len(its))
+		is.Ctr[k] = -1
 	}
+}
+
+// Len returns the total number of items.
+func (is *ItemSet) Len() int {
+	n := 0
+	for _, its := range is.Items {
+		n += len(its)
+	}
+	return n
+}
+
+// Next returns the next item index.
+func (is *ItemSet) Next(ev *PCombEnv) int {
+	k := is.nextN(ev)
+	is.Ctr[k]++
+	if is.Ctr[k] >= len(is.Order[k]) {
+		randx.PermuteInts(is.Order[k], ev.Rand)
+		is.Ctr[k] = 0
+	}
+	return is.Items[k][is.Order[k][is.Ctr[k]]]
+}
+
+// nextN returns the index (number of active cues - NActive.Min)
+// for the next item.
+func (is *ItemSet) nextN(ev *PCombEnv) int {
+	nn := len(is.Items)
+	if ev.Configs.UniformN {
+		for {
+			k := ev.Rand.Intn(nn)
+			if len(is.Items[k]) > 0 {
+				return k
+			}
+		}
+	}
+	r := ev.Rand.Intn(is.Len())
+	for k, its := range is.Items {
+		if r < len(its) {
+			return k
+		}
+		r -= len(its)
+	}
+	return nn - 1
 }
 
 func (ev *PCombEnv) State(el string) tensor.Values {
@@ -169,42 +232,14 @@ func (ev *PCombEnv) String() string {
 // to random slots, samples the chosen cue, and renders the states.
 func (ev *PCombEnv) Step() bool {
 	ev.Trial.Incr()
-	k := ev.nextN()
-	ev.Ctr[k]++
-	if ev.Ctr[k] >= len(ev.Order[k]) {
-		randx.PermuteInts(ev.Order[k], ev.Rand)
-		ev.Ctr[k] = 0
+	if ev.AgreeItems.Len() > 0 && ev.Rand.Float32() < ev.Configs.AgreePct {
+		ev.Item = ev.AgreeItems.Next(ev)
+	} else {
+		ev.Item = ev.Items.Next(ev)
 	}
-	ev.Item = ev.Items[k][ev.Order[k][ev.Ctr[k]]]
 	ev.SetItem(&ev.Configs.Space().Items[ev.Item])
 	ev.Render()
 	return true
-}
-
-// nextN returns the index (number of active cues - NActive.Min)
-// for the next item.
-func (ev *PCombEnv) nextN() int {
-	nn := len(ev.Items)
-	if ev.Configs.UniformN {
-		for {
-			k := ev.Rand.Intn(nn)
-			if len(ev.Items[k]) > 0 {
-				return k
-			}
-		}
-	}
-	tot := 0
-	for _, its := range ev.Items {
-		tot += len(its)
-	}
-	r := ev.Rand.Intn(tot)
-	for k, its := range ev.Items {
-		if r < len(its) {
-			return k
-		}
-		r -= len(its)
-	}
-	return nn - 1
 }
 
 // SetItem assigns the item cues to random slots, computes the normalized
@@ -215,6 +250,7 @@ func (ev *PCombEnv) SetItem(it *Item) {
 		ev.Slots[i] = Cue{P: -1, V: -1}
 		ev.NormP[i] = 0
 	}
+	ev.Agree = it.HasRepeat()
 	perm := ev.Rand.Perm(cfg.NCues)
 	sum := float32(0)
 	for i, c := range it.Cues {
@@ -297,6 +333,14 @@ func (ev *PCombEnv) ChosenValue() float32 {
 // the total normalized probability for each value (summed over cues
 // with the same value), which is the target probability of producing it.
 func (ev *PCombEnv) ValueProbs() (vals, probs []float32) {
+	vals, probs, _ = ev.ValueCounts()
+	return
+}
+
+// ValueCounts returns the distinct values among the active cues, the total
+// normalized probability for each value (summed over cues with the same
+// value), and the number of cues with each value.
+func (ev *PCombEnv) ValueCounts() (vals, probs []float32, counts []int) {
 	cfg := &ev.Configs
 	for i, c := range ev.Slots {
 		if c.P < 0 {
@@ -307,6 +351,7 @@ func (ev *PCombEnv) ValueProbs() (vals, probs []float32) {
 		for j, ov := range vals {
 			if ov == v {
 				probs[j] += ev.NormP[i]
+				counts[j]++
 				found = true
 				break
 			}
@@ -314,6 +359,7 @@ func (ev *PCombEnv) ValueProbs() (vals, probs []float32) {
 		if !found {
 			vals = append(vals, v)
 			probs = append(probs, ev.NormP[i])
+			counts = append(counts, 1)
 		}
 	}
 	return

@@ -50,8 +50,21 @@ type Config struct {
 	SalientHalf float32
 
 	// TestPct is the proportion of items (for each number of active cues)
-	// held out for testing.
+	// held out for testing. If DistinctTrain is set, this only applies
+	// to the items with distinct cue values.
 	TestPct float32
+
+	// DistinctTrain only trains on items where all the cue values are
+	// distinct. Items with repeated values (agreement items) are only used
+	// for testing. Otherwise, the number of cues with the same value is a
+	// shortcut for its summed probability, so a network can do well without
+	// using the probabilities at all, and agreement items in training
+	// confound the test for a superlinear agreement effect.
+	DistinctTrain bool
+
+	// AgreePct is the proportion of test trials that use agreement items
+	// (with repeated values), when DistinctTrain is set.
+	AgreePct float32
 
 	// UniformN samples the number of active cues uniformly on each trial,
 	// instead of in proportion to the number of items with that many cues
@@ -83,6 +96,8 @@ func (cfg *Config) Defaults() {
 	cfg.SalientFull = 0.75
 	cfg.SalientHalf = 0.5
 	cfg.TestPct = 0.5
+	cfg.DistinctTrain = true
+	cfg.AgreePct = 0.5
 	cfg.UniformN = false
 	cfg.MatchThr = 0.2
 	cfg.NBins = 10
@@ -134,5 +149,5 @@ func (cfg *Config) Salience(v float32) float32 {
 
 // Key returns a string that identifies the item space for this config.
 func (cfg *Config) Key() string {
-	return fmt.Sprintf("np%d_nv%d_na%d-%d_tp%g", cfg.NProbs(), cfg.NValues(), cfg.NActive.Min, cfg.NActive.Max, cfg.TestPct)
+	return fmt.Sprintf("np%d_nv%d_na%d-%d_tp%g_dt%v", cfg.NProbs(), cfg.NValues(), cfg.NActive.Min, cfg.NActive.Max, cfg.TestPct, cfg.DistinctTrain)
 }

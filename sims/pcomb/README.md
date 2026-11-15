@@ -67,9 +67,17 @@ An item is an unordered set of cues (with repetition allowed: several cues can h
 | 2-6 | 18,009,414 |
 | 2-8 | 886,322,664 |
 
-Half of the items for each number of cues (`TestPct` = 0.5) are held out for testing, using a fixed random seed. Each data-parallel test env gets a non-overlapping subset of the test items. The number of active cues on each trial is sampled in proportion to the number of training items with that many cues, so 4-cue items make up about 92% of trials. Setting `UniformN` instead samples the number of cues uniformly, and then an item with that many cues.
+Items include agreement cases, where several cues have the same value (e.g., 0.2 / -0.75 and 0.6 / -0.75). In training, these provide a shortcut: the number of cues with a value goes along with its summed probability, so a network can do well without using the probabilities at all. Choosing the most repeated value, ignoring the probabilities entirely, gives a `ChoseP` of 0.42 over the full item space, which is higher than calibrated sampling (0.40). Agreement items in training would also confound the test for a superlinear agreement effect.
 
-Items include cases where several cues have the same type (e.g., three cues at 0.2 / -0.75), which are the agreement cases discussed above. They currently occur in training at their natural frequency.
+So by default (`DistinctTrain`), training only uses items where all the cue values are distinct, and the agreement items are only used for testing:
+
+| Active cues | Distinct values | Repeated values (agreement) |
+|---|---|---|
+| 2 | 900 | 135 |
+| 3 | 10,500 | 5,715 |
+| 4 | 78,750 | 115,830 |
+
+Half of the distinct-value items for each number of cues (`TestPct` = 0.5) are held out for testing, using a fixed random seed. Test trials use agreement items half of the time (`AgreePct`), and held-out distinct items otherwise. Each data-parallel test env gets a non-overlapping subset of the test items. The number of active cues on each trial is sampled in proportion to the number of items with that many cues, so 4-cue items make up about 87% of training trials. Setting `UniformN` instead samples the number of cues uniformly, and then an item with that many cues.
 
 ### Input and output layers
 
@@ -91,28 +99,47 @@ Inactive cue slots are all zeros in both input layers.
 
 The main params: the learning rate is 0.01. The encoding and `Hidden` layers have low nominal activity (0.03 and 0.02) with adaptive inhibition. The `Output` and `Salience` targets have layer inhibition with Gi 1.05.
 
-In a 65-epoch run (`Trials` 512, `NData` 16), training mostly levels off by epoch 25-30, with about 15% misses on both training and held-out test items, and test `CalibErr` about 0.08 (see [results](results)). `ChoseP` levels off around 0.36. For comparison, over the training distribution, uniform choice over the distinct values gives 0.33, calibrated sampling gives 0.40, and always picking the most probable value gives 0.49. So the network chooses actual cue values most of the time, but its choice probabilities are flatter than the targets.
+In a 65-epoch run (`Trials` 512, `NData` 16), before the `DistinctTrain` change and the probability-sensitive stats below, training mostly levels off by epoch 25-30, with about 15% misses on both training and held-out test items, and test `CalibErr` about 0.08 (see [results](results)). `ChoseP` levels off around 0.36, against 0.33 for uniform choice over the distinct values and 0.40 for calibrated sampling. However, as noted above, the cue count shortcut can do this well without the probabilities, and indeed removing the probability pathway did not hurt performance on these stats.
 
 ### Statistics
 
-At the trial level, for each data-parallel item:
+The stats are computed by `PCombEnv.TrialStats` in [pcombenv/stats.go](pcombenv/stats.go) from the `Output` and `Salience` activity (minus phase in axon), so they are the same for [pcomb_ff](../pcomb_ff). At the trial level, for each data-parallel item:
 
-* `Value`: the decoded `Output` value (minus phase).
-* `CueErr`: distance between the decoded `Output` value (minus phase) and the nearest cue value.
+* `Value`: the decoded `Output` value.
+* `CueErr`: distance between the decoded `Output` value and the nearest cue value.
 * `Miss`: 1 if the decoded value is not within 0.2 (`MatchThr`) of any cue value, e.g., a blend between cue values.
-* `ChoseP`: the normalized probability of the cue value chosen by the network (excluding misses). Cues with the same value have their normalized probabilities summed, because the output cannot distinguish them.
-* `SalErr`: mean absolute difference between the `Salience` activity (minus phase) and the salience pattern for the value chosen by the network (excluding misses).
+* `SalErr`: mean absolute difference between the `Salience` activity and the salience pattern for the value chosen by the network (excluding misses).
 
-Calibration uses 10 bins of normalized probability (`NBins`). On each trial, each distinct cue value counts once, in the bin for its normalized probability summed over all cues with that value (as for `ChoseP`), and counts as chosen if it is the value the network produced. At the epoch level:
+For items with distinct cue values (all training items, and the distinct test items):
 
-* `Calib`: the frequency of choosing values in each bin.
-* `CalibP`: the mean normalized probability of values in each bin (the target frequency for a calibrated model, not the bin midpoint, because values are not evenly distributed within bins).
-* `CalibN`: the mean number of distinct values per trial in each bin, which varies widely across bins.
-* `CalibErr`: the mean absolute difference between `Calib` and `CalibP`, weighted by `CalibN`.
+* `ChoseP`: the normalized probability of the cue value chosen by the network (excluding misses).
+* `PGain`: `ChoseP` minus 1 / number of values: the gain over choosing a value regardless of the probabilities. Because the probabilities are independent of the values, this is 0 on average for any choice that ignores the probabilities, which makes it the main test of whether the probabilities are used.
+* `OutPErr`: the total variation distance between the target probabilities and the `Output` activity at the unit nearest each cue value, normalized over the values. This measures whether the output represents the probabilities regardless of where its peak is, which is mainly relevant for a blended output, as in the feedforward model. Adjacent value bumps overlap, so even a perfect blend is not 0, and a single bump scores worse than a blend.
+* Calibration, using 10 bins of normalized probability (`NBins`). On each trial, each cue value counts once, in the bin for its normalized probability, and counts as chosen if it is the value the network produced. At the epoch level:
+    + `Calib`: the frequency of choosing values in each bin.
+    + `CalibP`: the mean normalized probability of values in each bin (the target frequency for a calibrated model, not the bin midpoint, because values are not evenly distributed within bins).
+    + `CalibN`: the mean number of values per trial in each bin, which varies widely across bins.
+    + `CalibErr`: the mean absolute difference between `Calib` and `CalibP`, weighted by `CalibN`.
+
+For agreement items (test only, by default):
+
+* `AgreeP`: the summed normalized probability of the repeated values (excluding misses), which is how often a calibrated model chooses one of them.
+* `AgreeBoost`: 1 if the network chose a repeated value, minus `AgreeP` (excluding misses). Positive values mean agreeing cues are favored beyond their summed probability (superlinear). However, any winner-take-all sharpening also produces a positive value, so this needs to be compared with the general sharpening on distinct items (`PGain` above calibrated).
+
+Reference values for these stats on the test items, computed by `TestBaselines` in [pcombenv_test.go](pcombenv/pcombenv_test.go) by applying `TrialStats` to synthetic outputs:
+
+| Output strategy | Uses probs | `ChoseP` | `PGain` | `OutPErr` | `AgreeBoost` |
+|---|---|---|---|---|---|
+| Uniform choice over values | no | 0.26 | 0.00 | 0.60 | -0.16 |
+| Most repeated value | no | 0.26 | 0.00 | 0.60 | 0.43 |
+| Uniform blend of value bumps | no | 0.26 | 0.00 | 0.19 | -0.16 |
+| Calibrated sampling | yes | 0.31 | 0.05 | 0.55 | 0.00 |
+| Probability-weighted blend | yes | 0.39 | 0.12 | 0.08 | 0.25 |
+| Most probable value | yes | 0.39 | 0.13 | 0.48 | 0.28 |
 
 `Calib`, `CalibP` and `CalibN` are vectors over bins, so they are kept out of the plotted `Stats` levels. They are stored for the most recent epoch in `Current/<mode>/Calib/Epoch`, with the per-trial counts accumulated in `Current/<mode>/Calib/Trial`. Only the scalar `CalibErr` is logged and plotted.
 
-The test epoch `CueErr`, `Miss` and `CalibErr` are also recorded in the train epoch log.
+The test epoch `CueErr`, `Miss`, `PGain`, `OutPErr`, `CalibErr` and `AgreeBoost` are also recorded in the train epoch log.
 
 ## old notes
 

@@ -6,6 +6,7 @@ package pcombenv
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"cogentcore.org/core/math32"
@@ -47,12 +48,21 @@ func TestSpace(t *testing.T) {
 	}
 	inTest := map[int]bool{}
 	for k := range sp.Test {
-		n := len(sp.Train[k]) + len(sp.Test[k])
-		if int64(n) != cfg.NCombos(cfg.NActive.Min+k) {
-			t.Errorf("n=%d: train+test = %d", cfg.NActive.Min+k, n)
+		n := cfg.NActive.Min + k
+		nt := len(sp.Train[k]) + len(sp.Test[k])
+		if int64(nt) != cfg.NDistinct(n) {
+			t.Errorf("n=%d: train+test = %d, want distinct %d", n, nt, cfg.NDistinct(n))
+		}
+		if int64(nt+len(sp.Agree[k])) != cfg.NCombos(n) {
+			t.Errorf("n=%d: train+test+agree = %d", n, nt+len(sp.Agree[k]))
 		}
 		for _, i := range sp.Test[k] {
 			inTest[i] = true
+		}
+		for _, i := range sp.Agree[k] {
+			if !sp.Items[i].HasRepeat() {
+				t.Fatalf("agree item %d has no repeated values", i)
+			}
 		}
 	}
 	for _, trn := range sp.Train {
@@ -60,7 +70,110 @@ func TestSpace(t *testing.T) {
 			if inTest[i] {
 				t.Fatalf("item %d in both train and test", i)
 			}
+			if sp.Items[i].HasRepeat() {
+				t.Fatalf("train item %d has repeated values", i)
+			}
 		}
+	}
+}
+
+// TestBaselines reports the expected stats for reference strategies,
+// computed with [PCombEnv.TrialStats] on synthetic output patterns:
+// for the test env (distinct items for ChoseP, PGain, OutPErr, and
+// agreement items for AgreeBoost).
+func TestBaselines(t *testing.T) {
+	ev := &PCombEnv{}
+	ev.Defaults()
+	ev.Config(100, 1, 0, true, 1)
+	ev.Init(0)
+	cfg := &ev.Configs
+	npu := cfg.PopCodeUnits
+	type strat struct {
+		name string
+		// choose returns index of chosen value, or -1 for the probability
+		// weighted blend (outputs the blend instead of one bump).
+		choose func(probs []float32, counts []int) int
+		blend  func(probs []float32, counts []int) []float32
+	}
+	uniform := func(probs []float32, counts []int) []float32 {
+		w := make([]float32, len(probs))
+		for j := range w {
+			w[j] = 1 / float32(len(w))
+		}
+		return w
+	}
+	strats := []strat{
+		{name: "uniform choice", choose: func(probs []float32, counts []int) int { return ev.Rand.Intn(len(probs)) }},
+		{name: "calibrated sampling", choose: func(probs []float32, counts []int) int {
+			r := ev.Rand.Float32()
+			for j, p := range probs {
+				if r < p {
+					return j
+				}
+				r -= p
+			}
+			return len(probs) - 1
+		}},
+		{name: "most probable", choose: func(probs []float32, counts []int) int {
+			mi := 0
+			for j, p := range probs {
+				if p > probs[mi] {
+					mi = j
+				}
+			}
+			return mi
+		}},
+		{name: "most repeated (no probs)", choose: func(probs []float32, counts []int) int {
+			mi := 0
+			for j, c := range counts {
+				if c > counts[mi] {
+					mi = j
+				}
+			}
+			return mi
+		}},
+		{name: "uniform blend (no probs)", blend: uniform},
+		{name: "probability blend", blend: func(probs []float32, counts []int) []float32 { return probs }},
+	}
+	out := make([]float32, npu)
+	sal := make([]float32, npu)
+	var ts TrialStats
+	n := 20000
+	for _, st := range strats {
+		sums := make([]float64, len(TrialStatNames))
+		cnts := make([]float64, len(TrialStatNames))
+		for range n {
+			ev.Step()
+			vals, probs, counts := ev.ValueCounts()
+			clear(out)
+			if st.choose != nil {
+				cfg.ValuePop.Encode(&out, vals[st.choose(probs, counts)], npu, false)
+			} else {
+				w := st.blend(probs, counts)
+				bump := make([]float32, npu)
+				for j, v := range vals {
+					cfg.ValuePop.Encode(&bump, v, npu, false)
+					for i := range out {
+						out[i] += w[j] * bump[i]
+					}
+				}
+			}
+			ev.TrialStats(out, sal, &ts)
+			for i, v := range ts.Values() {
+				if !math.IsNaN(v) {
+					sums[i] += v
+					cnts[i]++
+				}
+			}
+		}
+		res := ""
+		for i, nm := range TrialStatNames {
+			switch nm {
+			case "Miss", "ChoseP", "PGain", "OutPErr", "AgreeBoost":
+				res += fmt.Sprintf("  %s %.3f", nm, sums[i]/cnts[i])
+			}
+		}
+		t.Logf("%-26s%s", st.name, res)
 	}
 }
 

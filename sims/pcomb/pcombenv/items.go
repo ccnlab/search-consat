@@ -41,6 +41,8 @@ func (it *Item) String(cfg *Config) string {
 
 // ItemSpace is the full list of items for a given config,
 // split into training and testing items for each number of active cues.
+// If [Config.DistinctTrain] is set, Train and Test only have items with
+// distinct cue values, and the items with repeated values are in Agree.
 type ItemSpace struct {
 	// Items is the full ordered list of items.
 	Items []Item
@@ -52,6 +54,23 @@ type ItemSpace struct {
 	// Test has the testing item indexes, for each number of
 	// active cues starting at NActive.Min.
 	Test [][]int
+
+	// Agree has the agreement item indexes (with repeated cue values),
+	// for each number of active cues starting at NActive.Min, if
+	// DistinctTrain is set. These are only used for testing.
+	Agree [][]int
+}
+
+// HasRepeat returns true if any of the item cues have the same value.
+func (it *Item) HasRepeat() bool {
+	for i, c := range it.Cues {
+		for _, o := range it.Cues[i+1:] {
+			if o.V == c.V {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 var (
@@ -115,20 +134,29 @@ func (cfg *Config) MakeSpace() *ItemSpace {
 				ts[j] = ts[i]
 			}
 		}
-		ni := len(sp.Items) - st
+		var split, agree []int
+		for i := st; i < len(sp.Items); i++ {
+			if cfg.DistinctTrain && sp.Items[i].HasRepeat() {
+				agree = append(agree, i)
+			} else {
+				split = append(split, i)
+			}
+		}
+		ni := len(split)
 		perm := rnd.Perm(ni)
 		ntest := int(math32.Round(cfg.TestPct * float32(ni)))
 		test := make([]int, ntest)
 		train := make([]int, ni-ntest)
 		for i, p := range perm {
 			if i < ntest {
-				test[i] = st + p
+				test[i] = split[p]
 			} else {
-				train[i-ntest] = st + p
+				train[i-ntest] = split[p]
 			}
 		}
 		sp.Train = append(sp.Train, train)
 		sp.Test = append(sp.Test, test)
+		sp.Agree = append(sp.Agree, agree)
 	}
 	return sp
 }
@@ -142,8 +170,16 @@ func (cfg *Config) SpaceString() string {
 	for n := cfg.NActive.Min; n <= cfg.NActive.Max; n++ {
 		nc := cfg.NCombos(n)
 		total += nc
-		fmt.Fprintf(&b, "%d cues: %d items\n", n, nc)
+		nd := cfg.NDistinct(n)
+		fmt.Fprintf(&b, "%d cues: %d items, %d with distinct values, %d with repeated values\n", n, nc, nd, nc-nd)
 	}
 	fmt.Fprintf(&b, "total: %d items\n", total)
 	return b.String()
+}
+
+// NDistinct returns the number of items with n active cues that all
+// have distinct values: C(NValues, n) * NProbs^n.
+func (cfg *Config) NDistinct(n int) int64 {
+	c := new(big.Int).Binomial(int64(cfg.NValues()), int64(n))
+	return c.Mul(c, new(big.Int).Exp(big.NewInt(int64(cfg.NProbs())), big.NewInt(int64(n)), nil)).Int64()
 }

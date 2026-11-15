@@ -39,6 +39,7 @@ go.work.sum
 sims/topdown/topdown/topdown
 sims/pcomb/pcomb/pcomb
 sims/consat_ff/consat_ff/consat_ff
+sims/pcomb_ff/pcomb_ff/pcomb_ff
 
 # Sim outputs: logs, weights, results, run data
 *.tsv

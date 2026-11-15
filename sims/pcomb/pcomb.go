@@ -509,7 +509,7 @@ func (ss *Sim) ConfigStats() {
 	// get test stats in train log
 	ss.AddStatStd(axon.StatCopyLevel(ss.Stats, Train, Test, Epoch, Run, func(s *plot.Style, stName string) {
 		s.On = true
-	}, "CueErr", "Miss", "CalibErr"))
+	}, "CueErr", "Miss", "PGain", "OutPErr", "CalibErr", "AgreeBoost"))
 
 	lays := net.LayersByType(axon.SuperLayer, axon.CTLayer, axon.InputLayer, axon.TargetLayer)
 	ss.AddStatStd(axon.StatLayerActGe(ss.Stats, net, Train, Trial, Run, lays...))

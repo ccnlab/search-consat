@@ -97,14 +97,18 @@ func TestRender(t *testing.T) {
 	ev.Config(100, 2, 1, true, 1)
 	ev.Init(0)
 	cfg := &ev.Configs
-	t.Logf("value units: %d, prob units: %d", cfg.NValueUnits(), cfg.NProbUnits())
+	t.Logf("pop code units: %d", cfg.PopCodeUnits)
 	for range 5 {
 		ev.Step()
 		vals, probs := ev.ValueProbs()
 		t.Logf("%s  values: %v probs: %v", ev.String(), vals, probs)
 		out := ev.States["Output"].Values
-		if d := math32.Abs(ev.Decode(out) - ev.ChosenValue()); d > 0.01 {
-			t.Errorf("decoded output off by %g", d)
+		// DecodePeak returns the peak unit's value, so it is accurate
+		// to within half the unit spacing.
+		pc := &cfg.ValuePop
+		tol := 0.5 * (pc.Max - pc.Min) / float32(cfg.PopCodeUnits-1)
+		if d := math32.Abs(ev.Decode(out) - ev.ChosenValue()); d > tol {
+			t.Errorf("decoded output off by %g > %g", d, tol)
 		}
 	}
 	act := func(pat []float32) int {
@@ -116,7 +120,7 @@ func TestRender(t *testing.T) {
 		}
 		return n
 	}
-	pat := make([]float32, cfg.NValueUnits())
+	pat := make([]float32, cfg.PopCodeUnits)
 	for vi := range cfg.NValues() {
 		v := cfg.Value(vi)
 		cfg.ValuePop.Encode(&pat, v, len(pat), false)

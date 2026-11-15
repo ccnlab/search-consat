@@ -18,18 +18,21 @@ import (
 var samplingStats = []string{"Value", "CueErr", "Miss", "ChoseP", "SalErr"}
 
 var samplingDocs = map[string]string{
-	"Value": 	"Decoded value on the current trial.",
+	"Value":    "Decoded value on the current trial.",
 	"CueErr":   "Distance between the decoded Output value (minus phase) and the nearest active cue value.",
 	"Miss":     "Proportion of trials where the decoded Output value is not within MatchThr of any cue value (e.g., a blend between cue values).",
-	"ChoseP":   "Normalized probability of the cue value chosen by the network (excluding misses). Compare to the probabilities of the available values to see over- or under-weighting.",
+	"ChoseP":   "Normalized probability of the cue value chosen by the network (excluding misses), summed over all cues with that value, because the output cannot distinguish them. Compare to the probabilities of the available values to see over- or under-weighting.",
 	"SalErr":   "Mean absolute difference between the Salience layer activity (minus phase) and the salience pattern for the value chosen by the network (excluding misses).",
-	"CalibErr": "Calibration error: mean absolute difference between the frequency of choosing values in each normalized probability bin and the mean normalized probability in that bin, weighted by the number of values per bin.",
+	"CalibErr": "Calibration error: mean absolute difference between the frequency of choosing values in each normalized probability bin and the mean normalized probability in that bin, weighted by the number of values per bin. Each distinct cue value counts once per trial, with its normalized probability summed over all cues with that value.",
 }
 
 // calibStats are per-trial calibration counts, with one cell per
-// normalized probability bin: CalN = number of distinct cue values
-// in the bin, CalC = 1 if the chosen value is in the bin,
-// CalP = sum of normalized probabilities in the bin.
+// normalized probability bin, accumulated over the epoch in
+// Current/<mode>/Calib/Trial (not Stats, because they are vectors that
+// cannot be plotted as such). Each distinct cue value counts once,
+// binned by its normalized probability summed over all cues with that
+// value: CalN = number of distinct values in the bin, CalC = 1 if the
+// chosen value is in the bin, CalP = sum of the values' probabilities.
 var calibStats = []string{"CalN", "CalC", "CalP"}
 
 // layerValues returns the given variable for all neurons in the layer for di.
@@ -48,10 +51,13 @@ func layerValues(ly *axon.Layer, vr axon.NeuronVars, di int, vals []float32) []f
 // StatSampling returns the stats function for the sampling performance
 // of the network, based on the decoded Output value relative to the cue
 // values, and the calibration of choice frequencies relative to the
-// normalized probabilities. At the Epoch level, Calib has the choice
-// frequency for each normalized probability bin, CalibP the mean
-// normalized probability in each bin, and CalibN the mean number of
-// values per trial in each bin.
+// normalized probabilities. At the end of each Epoch,
+// Current/<mode>/Calib/Epoch has Calib = the choice frequency for each
+// normalized probability bin, CalibP = the mean normalized probability
+// in each bin, and CalibN = the mean number of distinct values per trial
+// in each bin, as [NBins] vectors for the most recent epoch.
+// These are vectors, so they are kept out of the plotted Stats levels;
+// the scalar CalibErr summary is recorded in Stats.
 func (ss *Sim) StatSampling() func(mode Modes, level Levels, start bool) {
 	var outVals, salVals, salPat []float32
 	return func(mode Modes, level Levels, start bool) {
@@ -64,6 +70,8 @@ func (ss *Sim) StatSampling() func(mode Modes, level Levels, start bool) {
 		curModeDir := ss.Current.Dir(mode.String())
 		levelDir := modeDir.Dir(level.String())
 		subDir := modeDir.Dir((level - 1).String())
+		calDir := curModeDir.Dir("Calib").Dir(level.String())
+		calSubDir := curModeDir.Dir("Calib").Dir((level - 1).String())
 		scalars := samplingStats
 		if level > Trial {
 			scalars = append(scalars[:len(scalars):len(scalars)], "CalibErr")
@@ -78,15 +86,10 @@ func (ss *Sim) StatSampling() func(mode Modes, level Levels, start bool) {
 				})
 				metadata.SetDoc(tsr, samplingDocs[name])
 			}
-			var cnames []string
-			switch level {
-			case Trial:
-				cnames = calibStats
-			case Epoch:
-				cnames = []string{"Calib", "CalibP", "CalibN"}
-			}
-			for _, name := range cnames {
-				levelDir.Float64(name, 0, nbins).SetNumRows(0)
+			if level == Trial {
+				for _, name := range calibStats {
+					calDir.Float64(name, 0, nbins).SetNumRows(0)
+				}
 			}
 			return
 		}
@@ -151,17 +154,17 @@ func (ss *Sim) StatSampling() func(mode Modes, level Levels, start bool) {
 						cc[b]++
 					}
 				}
-				levelDir.Float64("CalN").AppendRowFloat(cn...)
-				levelDir.Float64("CalC").AppendRowFloat(cc...)
-				levelDir.Float64("CalP").AppendRowFloat(cp...)
+				calDir.Float64("CalN").AppendRowFloat(cn...)
+				calDir.Float64("CalC").AppendRowFloat(cc...)
+				calDir.Float64("CalP").AppendRowFloat(cp...)
 			}
 		case Epoch:
 			for _, name := range samplingStats {
 				levelDir.Float64(name).AppendRowFloat(stats.StatMean.Call(subDir.Value(name)).Float1D(0))
 			}
-			mn := stats.StatMean.Call(subDir.Value("CalN"))
-			mc := stats.StatMean.Call(subDir.Value("CalC"))
-			mp := stats.StatMean.Call(subDir.Value("CalP"))
+			mn := stats.StatMean.Call(calSubDir.Value("CalN"))
+			mc := stats.StatMean.Call(calSubDir.Value("CalC"))
+			mp := stats.StatMean.Call(calSubDir.Value("CalP"))
 			calib := make([]float64, nbins)
 			calibP := make([]float64, nbins)
 			calibN := make([]float64, nbins)
@@ -178,9 +181,12 @@ func (ss *Sim) StatSampling() func(mode Modes, level Levels, start bool) {
 				errSum += n * math.Abs(calib[b]-calibP[b])
 				nSum += n
 			}
-			levelDir.Float64("Calib").AppendRowFloat(calib...)
-			levelDir.Float64("CalibP").AppendRowFloat(calibP...)
-			levelDir.Float64("CalibN").AppendRowFloat(calibN...)
+			for name, vals := range map[string][]float64{"Calib": calib, "CalibP": calibP, "CalibN": calibN} {
+				tsr := calDir.Float64(name, nbins)
+				for b, v := range vals {
+					tsr.SetFloat1D(v, b)
+				}
+			}
 			levelDir.Float64("CalibErr").AppendRowFloat(errSum / nSum)
 		case Run:
 			for _, name := range scalars {

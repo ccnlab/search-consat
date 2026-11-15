@@ -14,14 +14,14 @@ var LayerParams = axon.LayerSheets{
 			Set: func(ly *axon.LayerParams) {
 				ly.Inhib.ActAvg.AdaptRate = 0.1 // 0.1 default > 0.05?
 				ly.Inhib.ActAvg.AdaptMax = 0.05 // 0.05 > 0.01
-				ly.Acts.Noise.On.SetBool(true) // true >= false (minor)
-				ly.Acts.Noise.Ge = 0.01
-				ly.Acts.Noise.Gi = 0.01
-				ly.Acts.Decay.GBuffs.SetBool(true) // this is important for non-PFC layers
+				ly.Acts.Noise.On.SetBool(false) // not neccessary
+				ly.Acts.Noise.Ge = 0.001
+				ly.Acts.Noise.Gi = 0.001
+				// ly.Acts.Decay.GBuffs.SetBool(true) // this is important for non-PFC layers
 			}},
-		{Sel: ".Input", Doc: "Value and Prob cue inputs: about 5 of 21 units active per active cue, 2-4 of 8 cues active",
+		{Sel: ".Input", Doc: "Value and Prob cue inputs: about 6 of 22 units active per active cue, 2-4 of 4 cues active",
 			Set: func(ly *axon.LayerParams) {
-				ly.Inhib.ActAvg.Nominal = 0.05
+				ly.Inhib.ActAvg.Nominal = 0.08 // 0.08 > 0.05 for long-term gemax 
 				ly.Inhib.Layer.On.SetBool(true)
 				ly.Inhib.Pool.On.SetBool(true)
 				ly.Inhib.Layer.Gi = 0.95
@@ -43,19 +43,19 @@ var LayerParams = axon.LayerSheets{
 				ly.Inhib.Layer.On.SetBool(true)
 				ly.Inhib.Layer.Gi = 1.1
 			}},
-		{Sel: "#Output", Doc: "one value bump: about 5 of 21 units",
+		{Sel: "#Output", Doc: "one value bump: about 6 of 22 units",
 			Set: func(ly *axon.LayerParams) {
 				ly.Acts.Clamp.Ge = 1.2
 				ly.Inhib.ActAvg.Nominal = 0.05
 				ly.Inhib.Layer.On.SetBool(true)
-				ly.Inhib.Layer.Gi = 1.1
+				ly.Inhib.Layer.Gi = 1.05 // 1.1 or 1.05 about same
 			}},
 		{Sel: "#Salience", Doc: "salience bump, or nothing for low magnitude values",
 			Set: func(ly *axon.LayerParams) {
 				ly.Acts.Clamp.Ge = 1.2
 				ly.Inhib.ActAvg.Nominal = 0.05
 				ly.Inhib.Layer.On.SetBool(true)
-				ly.Inhib.Layer.Gi = 1.1
+				ly.Inhib.Layer.Gi = 1.05 // 1.1 or 1.05 about same
 			}},
 	},
 	"Test": {},
@@ -67,14 +67,14 @@ var PathParams = axon.PathSheets{
 	"Base": {
 		{Sel: "Path", Doc: "std",
 			Set: func(pt *axon.PathParams) {
-				pt.Learn.LRate.Base = 0.005 // 0.05 >= 0.1 > 0.02
+				pt.Learn.LRate.Base = 0.005 // 0.005 >= 0.01 (deteriorates?) > 0.002 (too slow) 
 				pt.SWts.Init.SPct = 1
 				pt.SWts.Adapt.LRate = 0.0001
 				pt.Learn.DWt.SubMean = 1
 			}},
 		{Sel: ".BackPath", Doc: "top-down back-pathways MUST have lower relative weight scale, otherwise network hallucinates",
 			Set: func(pt *axon.PathParams) {
-				pt.PathScale.Rel = 0.2
+				pt.PathScale.Rel = 0.2 // 0.2 maybe > 0.3, 0.1?
 			}},
 	},
 	"Test": {},

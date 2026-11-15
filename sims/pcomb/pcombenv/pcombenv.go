@@ -32,10 +32,10 @@ import (
 // and nothing for low magnitudes.
 //
 // States:
-//   - Value: [1, NCues, 1, NValueUnits]
-//   - Prob: [1, NCues, 1, NProbUnits]
-//   - Output: [1, NValueUnits]
-//   - Salience: [1, NValueUnits]
+//   - Value: [NCues, 1, 1, PopCodeUnits]
+//   - Prob: [NCues, 1, 1, PopCodeUnits]
+//   - Output: [1, PopCodeUnits]
+//   - Salience: [1, PopCodeUnits]
 type PCombEnv struct {
 	// Name of environment: Train or Test.
 	Name string
@@ -264,7 +264,7 @@ func (ev *PCombEnv) Render() {
 }
 
 // SaliencePattern renders the salience pattern for given value into pat,
-// which must have NValueUnits: a copy of the value bump for full salience,
+// which must have PopCodeUnits: a copy of the value bump for full salience,
 // the outer half of the bump (away from 0) for half salience, else zeros.
 func (ev *PCombEnv) SaliencePattern(pat []float32, v float32) {
 	cfg := &ev.Configs
@@ -359,7 +359,7 @@ func DecodePeak(pc *popcode.OneD, pat []float32, width int) float32 {
 }
 
 // Decode returns the value decoded from the given output pattern,
-// which must have NValueUnits.
+// which must have PopCodeUnits.
 func (ev *PCombEnv) Decode(pat []float32) float32 {
 	return DecodePeak(&ev.Configs.ValuePop, pat, 1)
 }

@@ -189,7 +189,7 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	cfg := &ev.Configs
 	nc := cfg.NCues
 	npu := cfg.PopCodeUnits
-	nEncUnits := 15
+	nEncUnits := 15 // 20 maybe a tiny bit better asymtotically
 	nHidUnits := 15
 
 	val := net.AddLayer4D("Value", axon.InputLayer, nc, 1, 1, npu).AddClass("Input")
@@ -200,7 +200,7 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	out := net.AddLayer2D("Output", axon.TargetLayer, 1, npu).AddClass("Target")
 	sal := net.AddLayer2D("Salience", axon.TargetLayer, 1, npu).AddClass("Target")
 
-	prob.PlaceBehind(val, 5)
+	prob.PlaceRightOf(val, 2)
 	venc.PlaceAbove(val)
 	penc.PlaceRightOf(venc, 2)
 	hid.PlaceAbove(venc)
@@ -214,8 +214,8 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	net.BidirConnectLayers(venc, hid, full)
 	net.BidirConnectLayers(penc, hid, full)
 	net.BidirConnectLayers(hid, out, full)
-	net.ConnectLayers(hid, sal, full, axon.ForwardPath)
-	// net.BidirConnectLayers(hid, sal, full)
+	// net.ConnectLayers(hid, sal, full, axon.ForwardPath)
+	net.BidirConnectLayers(hid, sal, full)
 	
 	net.Build()
 	net.Defaults()

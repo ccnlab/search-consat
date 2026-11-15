@@ -52,7 +52,7 @@ Probabilities and values are discretized so the full space of cue combinations i
 * Probabilities: 0.2 to 1 in steps of 0.2 (`ProbStep`), excluding 0: 5 values.
 * Values: -1 to 1 in steps of 0.25 (`ValueStep`): 9 values.
 * Cue types: 5 x 9 = 45 (probability, value) combinations.
-* Number of active cues: 2 to 4 (`NActive`), out of 8 cue slots (`NCues`). The minimum of 2 avoids the special case of a single cue, which is always chosen regardless of its probability.
+* Number of active cues: 2 to 4 (`NActive`), out of 4 cue slots (`NCues`; 6 slots is a bit harder but also learns eventually). The minimum of 2 avoids the special case of a single cue, which is always chosen regardless of its probability.
 
 An item is an unordered set of cues (with repetition allowed: several cues can have the same type), so the number of items with $n$ cues is the number of multisets of size $n$ from 45 types, $\binom{45+n-1}{n}$. The cues are assigned to random slots on each trial, so slot positions are not part of the item space. The item counts for different ranges of active cues:
 
@@ -67,19 +67,19 @@ An item is an unordered set of cues (with repetition allowed: several cues can h
 | 2-6 | 18,009,414 |
 | 2-8 | 886,322,664 |
 
-10% of the items for each number of cues (`TestPct`) are held out for testing, using a fixed random seed. Each data-parallel test env gets a non-overlapping subset of the test items. Because the 4-cue items dominate the space (92% of items), the number of active cues is sampled uniformly on each trial (`UniformN`), and then an item with that many cues is selected.
+Half of the items for each number of cues (`TestPct` = 0.5) are held out for testing, using a fixed random seed. Each data-parallel test env gets a non-overlapping subset of the test items. The number of active cues on each trial is sampled in proportion to the number of training items with that many cues, so 4-cue items make up about 92% of trials. Setting `UniformN` instead samples the number of cues uniformly, and then an item with that many cues.
 
 Items include cases where several cues have the same type (e.g., three cues at 0.2 / -0.75), which are the agreement cases discussed above. They currently occur in training at their natural frequency.
 
 ### Input and output layers
 
-Each quantity is encoded as a Gaussian bump with 2 units per discrete step (`UnitsPerStep`), and $\sigma$ = 0.8 steps (`Sigma`), with one extra step of range on either end so the end values are not truncated. This gives about 5 of 21 value units above 0.1 activity, under the roughly 30% max activity that the axon inhibition handles well.
+Each quantity is encoded as a Gaussian bump over 22 units (`PopCodeUnits`), with $\sigma$ = 0.1 of the range (`Sigma`), and one extra step of range on either end so the end values are not truncated. For values (range -1.25 to 1.25), $\sigma$ is 0.25, one value step. For probabilities (range 0 to 1.2), it is 0.12, a bit over half a probability step. Either way, about 6 of 22 units are above 0.1 activity, under the roughly 30% max activity that the axon inhibition handles well.
 
-* `Value`: [1, 8, 1, 21]: one pool per cue slot, value range -1.25 to 1.25.
-* `Prob`: [1, 8, 1, 13]: one pool per cue slot, aligned with `Value`, probability range 0 to 1.2.
-* `Output` target: [1, 21]: a bump at the value of the cue sampled with probability $p_i / \sum_j p_j$.
-* `Salience` target: [1, 21], using the same value units as `Output`, so positive and negative salience are separate:
-    + $|v| \geq 0.75$ (`SalientFull`): a copy of the `Output` bump (5 units).
+* `Value`: [4, 1, 1, 22]: one pool per cue slot.
+* `Prob`: [4, 1, 1, 22]: one pool per cue slot, aligned with `Value`.
+* `Output` target: [1, 22]: a bump at the value of the cue sampled with probability $p_i / \sum_j p_j$.
+* `Salience` target: [1, 22], using the same value units as `Output`, so positive and negative salience are separate:
+    + $|v| \geq 0.75$ (`SalientFull`): a copy of the `Output` bump (6 units).
     + $|v| = 0.5$ (`SalientHalf`): the `Output` bump with the half toward 0 cut off (3 units).
     + $|v| \leq 0.25$: no salience activity.
 
@@ -87,23 +87,30 @@ Inactive cue slots are all zeros in both input layers.
 
 ### Network
 
-The initial network is minimal: `Value` and `Prob` project to a single 12x12 `Hidden` layer, which is bidirectionally connected with the `Output` and `Salience` target layers. The params are untuned starting values.
+`Value` and `Prob` each project to their own 15x15 encoding layer (`ValueEnc`, `ProbEnc`), which are both bidirectionally connected with a 15x15 `Hidden` layer. `Hidden` is bidirectionally connected with the `Output` and `Salience` target layers. All connections are full, and back pathways have a relative weight scale of 0.2, otherwise the network hallucinates.
+
+The main params: the learning rate is 0.01. The encoding and `Hidden` layers have low nominal activity (0.03 and 0.02) with adaptive inhibition. The `Output` and `Salience` targets have layer inhibition with Gi 1.05.
+
+In a 65-epoch run (`Trials` 512, `NData` 16), training mostly levels off by epoch 25-30, with about 15% misses on both training and held-out test items, and test `CalibErr` about 0.08 (see [results](results)). `ChoseP` levels off around 0.36. For comparison, over the training distribution, uniform choice over the distinct values gives 0.33, calibrated sampling gives 0.40, and always picking the most probable value gives 0.49. So the network chooses actual cue values most of the time, but its choice probabilities are flatter than the targets.
 
 ### Statistics
 
 At the trial level, for each data-parallel item:
 
+* `Value`: the decoded `Output` value (minus phase).
 * `CueErr`: distance between the decoded `Output` value (minus phase) and the nearest cue value.
-* `Miss`: 1 if the decoded value is not within 0.125 (`MatchThr`, half a value step) of any cue value, e.g., a blend between cue values.
+* `Miss`: 1 if the decoded value is not within 0.2 (`MatchThr`) of any cue value, e.g., a blend between cue values.
 * `ChoseP`: the normalized probability of the cue value chosen by the network (excluding misses). Cues with the same value have their normalized probabilities summed, because the output cannot distinguish them.
 * `SalErr`: mean absolute difference between the `Salience` activity (minus phase) and the salience pattern for the value chosen by the network (excluding misses).
 
-Calibration uses 10 bins of normalized probability (`NBins`). On each trial, each distinct cue value counts once in the bin for its normalized probability, and counts as chosen if it is the value the network produced. At the epoch level:
+Calibration uses 10 bins of normalized probability (`NBins`). On each trial, each distinct cue value counts once, in the bin for its normalized probability summed over all cues with that value (as for `ChoseP`), and counts as chosen if it is the value the network produced. At the epoch level:
 
 * `Calib`: the frequency of choosing values in each bin.
 * `CalibP`: the mean normalized probability of values in each bin (the target frequency for a calibrated model, not the bin midpoint, because values are not evenly distributed within bins).
-* `CalibN`: the mean number of values per trial in each bin, which varies widely across bins.
+* `CalibN`: the mean number of distinct values per trial in each bin, which varies widely across bins.
 * `CalibErr`: the mean absolute difference between `Calib` and `CalibP`, weighted by `CalibN`.
+
+`Calib`, `CalibP` and `CalibN` are vectors over bins, so they are kept out of the plotted `Stats` levels. They are stored for the most recent epoch in `Current/<mode>/Calib/Epoch`, with the per-trial counts accumulated in `Current/<mode>/Calib/Trial`. Only the scalar `CalibErr` is logged and plotted.
 
 The test epoch `CueErr`, `Miss` and `CalibErr` are also recorded in the train epoch log.
 

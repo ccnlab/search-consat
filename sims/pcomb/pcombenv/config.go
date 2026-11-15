@@ -95,10 +95,12 @@ func (cfg *Config) Update() {
 	vmin := -1 - cfg.ValueStep
 	vmax := 1 + cfg.ValueStep
 	cfg.ValuePop.SetRange(vmin, vmax, cfg.Sigma)
+	cfg.ValuePop.Thr = 0.05 // no big diff..
 	cfg.ProbPop.Defaults()
 	pmin := float32(0)
 	pmax := 1 + cfg.ProbStep
 	cfg.ProbPop.SetRange(pmin, pmax, cfg.Sigma)
+	cfg.ProbPop.Thr = 0.05
 }
 
 // NProbs is the number of discrete probability values.

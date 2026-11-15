@@ -32,7 +32,7 @@ import (
 	"cogentcore.org/lab/stats/stats"
 	"cogentcore.org/lab/tensor"
 	"cogentcore.org/lab/tensorfs"
-	"github.com/ccnlab/search-consat/sims/consat/consatenv"
+	"github.com/ccnlab/search-consat/sims/topdown/consatenv"
 	"github.com/emer/egomlx/egomlx"
 	"github.com/emer/emergent/v2/egui"
 	"github.com/emer/emergent/v2/env"
@@ -404,7 +404,9 @@ func (ss *Sim) StatsStart(lmd, ltm enums.Enum) {
 	if level <= Trial {
 		return
 	}
+	unlock := ss.GUI.LockGUI()
 	ss.RunStats(mode, level-1, Start)
+	unlock()
 }
 
 // StatsStep is called by Looper at each step of iteration,
@@ -415,8 +417,11 @@ func (ss *Sim) StatsStep(lmd, ltm enums.Enum) {
 	if level == Cycle {
 		return
 	}
+	unlock := ss.GUI.LockGUI()
 	ss.RunStats(mode, level, Step)
+	unlock()
 	tensorfs.DirTable(egomlx.StatsNode(ss.Stats, mode, level), nil).WriteToLog()
+	ss.UpdatePlots(mode, level)
 }
 
 // RunStats runs the StatFuncs for given mode, level and phase.
@@ -424,16 +429,22 @@ func (ss *Sim) RunStats(mode Modes, level Levels, start bool) {
 	for _, sf := range ss.StatFuncs {
 		sf(mode, level, start)
 	}
-	if !start && ss.GUI.Tabs != nil {
-		tbs := ss.GUI.Tabs.AsLab()
-		_, idx := tbs.CurrentTab()
-		nm := mode.String() + " " + level.String() + " Plot"
-		tbs.GoUpdatePlot(nm)
-		if level == Run {
-			tbs.GoUpdatePlot("Train RunAll Plot")
-		}
-		tbs.SelectTabIndex(idx)
+}
+
+// UpdatePlots updates the plots for given mode and level.
+// Must be called outside of lockGUI, as the plot update takes the lock.
+func (ss *Sim) UpdatePlots(mode Modes, level Levels) {
+	if ss.GUI.Tabs == nil {
+		return
 	}
+	tbs := ss.GUI.Tabs.AsLab()
+	_, idx := tbs.CurrentTab()
+	nm := mode.String() + " " + level.String() + " Plot"
+	tbs.GoUpdatePlot(nm)
+	if level == Run {
+		tbs.GoUpdatePlot("Train RunAll Plot")
+	}
+	tbs.SelectTabIndex(idx)
 }
 
 // SetRunName sets the overall run name, used for naming output logs and weight files

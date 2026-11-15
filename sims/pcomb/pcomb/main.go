@@ -5,8 +5,8 @@
 package main
 
 import (
-	"github.com/ccnlab/search-consat/sims/consat"
+	"github.com/ccnlab/search-consat/sims/pcomb"
 	"github.com/emer/emergent/v2/egui"
 )
 
-func main() { egui.Run[consat.Sim, consat.Config]() }
+func main() { egui.Run[pcomb.Sim, pcomb.Config]() }

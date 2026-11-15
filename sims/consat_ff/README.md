@@ -1,6 +1,6 @@
 # consat_ff: feedforward baseline
 
-A feedforward backprop version of the [consat](../consat) model, built with [egomlx](https://github.com/emer/egomlx) (gomlx). It uses the same environment, [consat/consatenv](../consat/consatenv): partial / ambiguous line segments rendered over a 5x5 grid of 5x5 hypercolumns.
+A feedforward backprop version of the [topdown](../topdown) model, built with [egomlx](https://github.com/emer/egomlx) (gomlx). It uses the same environment, [topdown/consatenv](../topdown/consatenv): partial / ambiguous line segments rendered over a 5x5 grid of 5x5 hypercolumns.
 
 In the axon `consat` model, the Full line pattern is reconstructed on the Input layer via top-down projections from higher layers. That is not possible in a feedforward network, so here `Full` is the top output Target layer:
 

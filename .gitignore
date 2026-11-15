@@ -36,7 +36,8 @@ go.work.sum
 .DS_Store
 
 # Sim binaries (built in each sim's main package dir)
-sims/consat/consat/consat
+sims/topdown/topdown/topdown
+sims/pcomb/pcomb/pcomb
 sims/consat_ff/consat_ff/consat_ff
 
 # Sim outputs: logs, weights, results, run data

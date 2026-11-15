@@ -1,4 +1,25 @@
-# Constraint satisfaction
+# Top-down Constraint satisfaction
+
+This project (which used to be in axon/sims/consat -- see that for github history) was used to explore a number of different potential constraint satisfaction tasks, for the paper on Search and the unreasonable effectiveness of stochastic gradient descent in both weight and activation space. The goal of this project was to test the idea that bidirectionally-connected spiking networks are particularly effective at this kind of gradient-descent in activation space.
+
+The final version of this model implemented a situation where the input was locally entirely ambiguous, and top-down constraints from surrounding "channels" of processing are needed to resolve the ambiguity. The specific implementation involved partial lines rendered across different hypercolumn groups where the maximally ambiguous bottom-up input is just the central point across groups, with horizontal, vertical, and two types of diagonal lines possible as larger-scale structure. Thus the single center points are consistent with any of these lines, and only the neighbor context determine which way it should go. And in the axon model, this information comes from top-down inputs.
+
+Line art figure:
+
+```
+         o
+        / \
+      o     o
+     / \   / \
+
+  \|/   \|/   \|/
+ - - - -  -- --- -  <- Lines, 3x3
+  /|\   /|\   /|\   <- Pixels 5x5
+```
+
+This works well in axon, but the problem is that there is no way to do this in a comparison feedforward model other than map the entire ambiguous input into the output with the lines. Which, because it has the full context, it just maps directly and easily. Not really a great demo.. :)
+
+## Discussion of previous attempts
 
 The Hopfield & Tank (1985) (HT85) model relies on single units with stereotyped wiring.
 
@@ -26,8 +47,4 @@ Per https://en.wikipedia.org/wiki/Constraint_satisfaction_problem -- generic ver
 
 Key thing: need the output to be somehow more than binary! Ok, so could define different *classes* according to these constraints, and the problem is to classify. So you have N different sets of constraints, and you need to find the one that fits the best -- that seems good!!
 
-## TODO
-
-* Hierarchical hidden -- 2x2 tiled with wrap -- needs more local
-* minus-plus in same layer with soft clamp.
 

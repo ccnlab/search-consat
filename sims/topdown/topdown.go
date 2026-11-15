@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// package consat: This simulation tests axon on constraint satisfaction
+// package topdown: This simulation tests axon on constraint satisfaction
 // using the traveling salesperson problem.
-package consat
+package topdown
 
 //go:generate core generate -add-types -add-funcs -gosl
 
@@ -27,7 +27,7 @@ import (
 	"cogentcore.org/lab/stats/stats"
 	"cogentcore.org/lab/tensor"
 	"cogentcore.org/lab/tensorfs"
-	"github.com/ccnlab/search-consat/sims/consat/consatenv"
+	"github.com/ccnlab/search-consat/sims/topdown/consatenv"
 	"github.com/emer/axon/v2/axon"
 	"github.com/emer/emergent/v2/egui"
 	"github.com/emer/emergent/v2/emer"
@@ -456,7 +456,9 @@ func (ss *Sim) StatsStart(lmd, ltm enums.Enum) {
 	if level <= Trial {
 		return
 	}
+	unlock := ss.GUI.LockGUI()
 	ss.RunStats(mode, level-1, axon.Start)
+	unlock()
 }
 
 // StatsStep is called by Looper at each step of iteration,
@@ -467,8 +469,11 @@ func (ss *Sim) StatsStep(lmd, ltm enums.Enum) {
 	if level == Cycle {
 		return
 	}
+	unlock := ss.GUI.LockGUI()
 	ss.RunStats(mode, level, axon.Step)
+	unlock()
 	tensorfs.DirTable(axon.StatsNode(ss.Stats, mode, level), nil).WriteToLog()
+	ss.UpdatePlots(mode, level)
 }
 
 // RunStats runs the StatFuncs for given mode, level and phase.
@@ -476,22 +481,29 @@ func (ss *Sim) RunStats(mode Modes, level Levels, start bool) {
 	for _, sf := range ss.StatFuncs {
 		sf(mode, level, start)
 	}
-	if !start && ss.GUI.Tabs != nil {
-		tbs := ss.GUI.Tabs.AsLab()
-		_, idx := tbs.CurrentTab()
-		nm := mode.String() + " " + level.String() + " Plot"
-		tbs.GoUpdatePlot(nm)
-		switch level {
-		// case Trial:
-		// 	ev := ss.Envs.ByModeDi(Train, 0).(*consatenv.ConSatEnv)
-		// 	ev.UpdatePlot()
-		// 	fr := tbs.TabByName("Optimal")
-		// 	fr.Update()
-		case Run:
-			tbs.GoUpdatePlot("Train RunAll Plot")
-		}
-		tbs.SelectTabIndex(idx)
+}
+
+// UpdatePlots updates the GUI plots for given mode and level, after the
+// stats have been computed in StatsStep. It must be called after the
+// LockGUI unlock, because the plot updates take the same GUI lock.
+func (ss *Sim) UpdatePlots(mode Modes, level Levels) {
+	if ss.GUI.Tabs == nil {
+		return
 	}
+	tbs := ss.GUI.Tabs.AsLab()
+	_, idx := tbs.CurrentTab()
+	nm := mode.String() + " " + level.String() + " Plot"
+	tbs.GoUpdatePlot(nm)
+	switch level {
+	// case Trial:
+	// 	ev := ss.Envs.ByModeDi(Train, 0).(*consatenv.ConSatEnv)
+	// 	ev.UpdatePlot()
+	// 	fr := tbs.TabByName("Optimal")
+	// 	fr.Update()
+	case Run:
+		tbs.GoUpdatePlot("Train RunAll Plot")
+	}
+	tbs.SelectTabIndex(idx)
 }
 
 // SetRunName sets the overall run name, used for naming output logs and weight files

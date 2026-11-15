@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package consat
+package pcomb
 
 import (
 	"cogentcore.org/core/core"
@@ -59,9 +59,9 @@ type RunConfig struct {
 	GPUDevice int
 
 	// NData is the number of data-parallel items to process in parallel per trial.
-	// Is significantly faster for both CPU and GPU.  Results in an effective
+	// Is significantly faster for both CPU and GPU. Results in an effective
 	// mini-batch of learning.
-	NData int `default:"10" min:"1"`
+	NData int `default:"16" min:"1"`
 
 	// NThreads is the number of parallel threads for CPU computation;
 	// 0 = use default.
@@ -112,10 +112,6 @@ func (rc *RunConfig) Cycles() int {
 // LogConfig has config parameters related to logging data.
 type LogConfig struct {
 
-	// OnOffThr is the on-off ActM threshold for computing the OnWasOff and OffWasOn stat.
-	// 0.25 seems fine..
-	OnOffThr float32 `default:"0.25"`
-
 	// SaveWeights will save final weights after each run.
 	SaveWeights bool
 
@@ -144,8 +140,8 @@ type Config struct {
 }
 
 func (cfg *Config) Defaults() {
-	cfg.Name = "ConSat"
-	cfg.Title = "Axon constraint statisfaction"
-	cfg.URL = "https://github.com/emer/axon/blob/main/sims/consat/README.md"
-	cfg.Doc = "This tests constraint satisfaction using CNF formulae."
+	cfg.Name = "PComb"
+	cfg.Title = "Axon probabilistic combinations"
+	cfg.URL = "https://github.com/ccnlab/search-consat/blob/main/sims/pcomb/README.md"
+	cfg.Doc = "This tests stochastic sampling of outcome values according to the combined probabilities of multiple input cues."
 }

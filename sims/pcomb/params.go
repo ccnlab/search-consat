@@ -29,17 +29,19 @@ var LayerParams = axon.LayerSheets{
 			}},
 		{Sel: ".Encode", Doc: "",
 			Set: func(ly *axon.LayerParams) {
-				ly.Inhib.ActAvg.Nominal = 0.05
-				// ly.Inhib.ActAvg.AdaptGi.SetBool(true)
+				ly.Inhib.ActAvg.Nominal = 0.03
+				ly.Inhib.ActAvg.Offset = 0.03
+				ly.Inhib.ActAvg.AdaptGi.SetBool(true)
 				ly.Inhib.Layer.On.SetBool(true)
-				ly.Inhib.Layer.Gi = 1.05
+				ly.Inhib.Layer.Gi = 1.1
 			}},
 		{Sel: "#Hidden", Doc: "",
 			Set: func(ly *axon.LayerParams) {
 				ly.Inhib.ActAvg.Nominal = 0.02
-				// ly.Inhib.ActAvg.AdaptGi.SetBool(true)
+				ly.Inhib.ActAvg.Offset = 0.03
+				ly.Inhib.ActAvg.AdaptGi.SetBool(true)
 				ly.Inhib.Layer.On.SetBool(true)
-				ly.Inhib.Layer.Gi = 1.05
+				ly.Inhib.Layer.Gi = 1.1
 			}},
 		{Sel: "#Output", Doc: "one value bump: about 5 of 21 units",
 			Set: func(ly *axon.LayerParams) {

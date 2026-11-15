@@ -75,7 +75,7 @@ type Config struct {
 
 func (cfg *Config) Defaults() {
 	cfg.NCues = 2
-	cfg.NActive.Set(2, 2)
+	cfg.NActive.Set(1, 2)
 	cfg.ProbStep = 0.2
 	cfg.ValueStep = 0.25
 	cfg.PopCodeUnits = 22
@@ -83,8 +83,8 @@ func (cfg *Config) Defaults() {
 	cfg.SalientFull = 0.75
 	cfg.SalientHalf = 0.5
 	cfg.TestPct = 0.1
-	cfg.UniformN = false
-	cfg.MatchThr = 0.125
+	cfg.UniformN = true
+	cfg.MatchThr = 0.2
 	cfg.NBins = 10
 	cfg.Update()
 }

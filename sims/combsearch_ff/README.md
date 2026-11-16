@@ -29,6 +29,8 @@ Other settings:
 
 ## Results
 
+The results below are from an earlier version of the stats: `MatchThr` was 0.5, so a blend of two output patterns could count as a match (see the combsearch README), and the `Solved` columns are identical to the current `Coherent` (all slots in the same group).
+
 Settings: 3 slots, n = 24 (the earlier defaults), G = 8, g = 3, 1 run, 100 epochs of 512 trials, about 30 seconds.
 
 **m = 1** (the target group is determined by the inputs):
@@ -68,3 +70,18 @@ Same settings with `NSlots = 4`. The m = 2 run uses n = 32, because n = 24 has o
 - **m = 1:** a 4th slot doesn't make it harder. The fourth input constrains the group more, and there are many more training items (11952 for n = 24). Test `Solved` matches train, so the generalization is complete. n = 32 is slower (0.94 at epoch 100, still rising).
 - **m = 2:** the chance of all 4 slots agreeing by independent choice falls to 2·(1/2)⁴ = 0.125. The ff net is only a little above that on test items (0.19), and flat from epoch 30 on. Even on training items it reaches only 0.32.
 - So adding slots makes the coordination problem much harder for feedforward without making the determined case harder. The gap between m = 1 and m = 2 widens from 0.88 vs 0.18 to 0.94 vs 0.19, with chance dropping from 0.25 to 0.125.
+
+### Shared group patterns
+
+With `GroupPats = true` (all inputs in a group share the same output pattern), 4 slots, n = 32, 1 run, 100 epochs:
+
+| m | train Coherent | test Coherent | test NSame (of 4) |
+|---|---|---|---|
+| 1 | 1.00 (by epoch 29) | 1.00 | 4.00 |
+| 2 | 0.87 | 0.83 | 3.76 |
+
+- Every slot's output is one of its input's group patterns, so `Coherent` (all slots in the same group) also means all slots are in a valid group: it is the target.
+- **m = 1** is learned perfectly and fast, compared to 0.94 test after 100 epochs with distinct patterns.
+- **m = 2** goes from 0.19 to 0.83 on test. This is not search: the net doesn't need to commit on each trial. With shared patterns, Hidden represents each group once for all the slots, so a single learned preference between groups (e.g., a bias) breaks the tie the same way in every slot. The deterministic blend has the same winner everywhere.
+- Any fixed ordering of the groups solves m > 1 under these stats, because the stats accept either valid group. With distinct patterns the same strategy would need the preference to be learned separately in each (input, group) output pattern of each slot. With shared patterns it is one preference in Hidden, used by every slot.
+- So shared patterns remove the diffuse mapping, but they also let feedforward break the symmetry with a fixed priority instead of a per-trial choice.

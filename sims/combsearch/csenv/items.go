@@ -85,18 +85,37 @@ func (sp *Space) GroupIndex(in, g int) int {
 // OutputIndex returns the vocabulary index of the output pattern
 // for given input, group index within the input's groups
 // (see [Space.GroupIndex]), and member within the group.
+// If GroupPats, this is the same for all inputs in the group.
 func (sp *Space) OutputIndex(cfg *Config, in, gi, mem int) int {
+	if cfg.GroupPats {
+		return cfg.NInputs + sp.Groups[in][gi]*cfg.GroupN + mem
+	}
 	return cfg.NInputs + (in*cfg.GroupsPer+gi)*cfg.GroupN + mem
 }
 
 // OutputSource returns the input, group (not the index) and member
 // for given output index into the output patterns (0..NOutputs-1).
+// If GroupPats, the pattern is shared by all the inputs in the group,
+// and in is -1.
 func (sp *Space) OutputSource(cfg *Config, oi int) (in, g, mem int) {
 	mem = oi % cfg.GroupN
 	oi /= cfg.GroupN
+	if cfg.GroupPats {
+		return -1, oi, mem
+	}
 	in = oi / cfg.GroupsPer
 	g = sp.Groups[in][oi%cfg.GroupsPer]
 	return
+}
+
+// OutputFor returns true if the output pattern with given input and
+// group (from [Space.OutputSource]) is one of the output patterns for
+// the given input.
+func (sp *Space) OutputFor(cfg *Config, in, oin, g int) bool {
+	if cfg.GroupPats {
+		return slices.Contains(sp.Groups[in], g)
+	}
+	return oin == in
 }
 
 var (
@@ -268,7 +287,7 @@ func (cfg *Config) SpaceString(sp *Space) string {
 		mn = min(mn, len(m))
 		mx = max(mx, len(m))
 	}
-	fmt.Fprintf(&b, "groups: %d, %d per input, %d-%d members per group, %d outputs per input per group\n", cfg.NGroups, cfg.GroupsPer, mn, mx, cfg.GroupN)
+	fmt.Fprintf(&b, "groups: %d, %d per input, %d-%d members per group, %d outputs per input per group, shared group patterns: %v\n", cfg.NGroups, cfg.GroupsPer, mn, mx, cfg.GroupN, cfg.GroupPats)
 	nall := 1
 	for range cfg.NSlots {
 		nall *= cfg.NInputs * cfg.GroupsPer * cfg.GroupN

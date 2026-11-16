@@ -191,28 +191,32 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	ns := cfg.NSlots
 	ps := cfg.PoolSize
 	es := ss.Config.Params.EncodeSize
-	hs := ss.Config.Params.HiddenSize
+	// hs := ss.Config.Params.HiddenSize
 
 	// slots are pools along the outer X axis
 	inp := net.AddLayer4D("Input", axon.InputLayer, 1, ns, ps, ps).AddClass("Input")
 	enc := net.AddLayer4D("Encode", axon.SuperLayer, 1, ns, es, es).AddClass("Encode")
+	enc2 := net.AddLayer4D("Encode2", axon.SuperLayer, 1, ns, es, es).AddClass("Encode")
 	out := net.AddLayer4D("Output", axon.TargetLayer, 1, ns, ps, ps).AddClass("Target")
-	hid := net.AddLayer2D("Hidden", axon.SuperLayer, hs, hs)
+	// hid := net.AddLayer2D("Hidden", axon.SuperLayer, hs, hs)
 
 	enc.PlaceAbove(inp)
+	enc2.PlaceBehind(enc, 2)
 	out.PlaceAbove(enc)
-	hid.PlaceRightOf(enc, 2)
+	// hid.PlaceRightOf(out, 2)
 
 	full := paths.NewFull()
+	_ = full
 	pone := paths.NewPoolOneToOne()
 
 	net.ConnectLayers(inp, enc, pone, axon.ForwardPath)
-	net.BidirConnectLayers(enc, out, pone)
-	net.BidirConnectLayers(enc, hid, full)
+	net.BidirConnectLayers(enc, enc2, pone)
+	net.BidirConnectLayers(enc2, out, pone)
+	// net.BidirConnectLayers(enc2, hid, full)
 
 	// net.ConnectLayers(out, hid, full, axon.BackPath)
-	net.BidirConnectLayers(hid, out, full)
-	// net.LateralConnectLayer(enc, full)
+	// net.BidirConnectLayers(hid, out, full)
+	// net.LateralConnectLayer(enc2, full)
 	
 	net.Build()
 	net.Defaults()
@@ -506,7 +510,7 @@ func (ss *Sim) ConfigStats() {
 	// get test stats in train log
 	ss.AddStatStd(axon.StatCopyLevel(ss.Stats, Train, Test, Epoch, Run, func(s *plot.Style, stName string) {
 		s.On = true
-	}, "Miss", "Valid", "NSame", "Coherent", "Solved"))
+	}, "Miss", "Valid", "NSame", "Coherent"))
 
 	lays := net.LayersByType(axon.SuperLayer, axon.CTLayer, axon.InputLayer, axon.TargetLayer)
 	ss.AddStatStd(axon.StatLayerActGe(ss.Stats, net, Train, Trial, Run, lays...))
@@ -527,7 +531,7 @@ func (ss *Sim) ConfigStats() {
 	ss.AddStatStd(axon.StatLevelAll(ss.Stats, Train, Run, func(s *plot.Style, cl tensor.Values) {
 		name := metadata.Name(cl)
 		switch name {
-		case "Solved", "Test_Solved":
+		case "Coherent", "Test_Coherent":
 			s.On = true
 			s.Range.SetMin(0).SetMax(1)
 		}

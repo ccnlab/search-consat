@@ -27,10 +27,19 @@ func TestSpaceSizes(t *testing.T) {
 }
 
 func TestSpace(t *testing.T) {
-	for _, m := range []int{1, 2} {
+	for _, gp := range []bool{false, true} {
+		for _, m := range []int{1, 2} {
+			testSpace(t, m, gp)
+		}
+	}
+}
+
+func testSpace(t *testing.T, m int, gp bool) {
+	{
 		var cfg Config
 		cfg.Defaults()
 		cfg.NValid = m
+		cfg.GroupPats = gp
 		sp := cfg.MakeSpace()
 		t.Log("\n" + cfg.SpaceString(sp))
 		if len(sp.Items) == 0 {
@@ -57,6 +66,9 @@ func TestSpace(t *testing.T) {
 		}
 		for o := range cfg.NOutputs() {
 			in, g, mem := sp.OutputSource(&cfg, o)
+			if cfg.GroupPats {
+				in = sp.Members[g][0]
+			}
 			if sp.OutputIndex(&cfg, in, sp.GroupIndex(in, g), mem) != cfg.NInputs+o {
 				t.Fatalf("OutputSource / OutputIndex mismatch for %d", o)
 			}
@@ -115,19 +127,29 @@ func newEnv(cfg *Config, test bool) *CSEnv {
 // TestStats checks the stats on the target outputs, and reports baselines
 // for choosing a group independently in each slot (no coordination).
 func TestStats(t *testing.T) {
-	for _, m := range []int{1, 2} {
+	for _, gp := range []bool{false, true} {
+		for _, m := range []int{1, 2} {
+			testStats(t, m, gp)
+		}
+	}
+}
+
+func testStats(t *testing.T, m int, gp bool) {
+	{
 		var cfg Config
 		cfg.Defaults()
 		cfg.NValid = m
+		cfg.GroupPats = gp
 		ev := newEnv(&cfg, true)
 		sp := ev.Space()
 		var ts TrialStats
 		n := 2000
-		var indep, cohRand [5]float64
+		indep := make([]float64, len(TrialStatNames))
+		cohRand := make([]float64, len(TrialStatNames))
 		for range n {
 			ev.Step()
 			ev.TrialStats(slotChoice(ev, ev.Outputs), &ts)
-			if ts.Solved != 1 || ts.Miss != 0 || ts.Valid != 1 {
+			if ts.Coherent != 1 || ts.Miss != 0 || ts.Valid != 1 || ts.Margin < 0.49 {
 				t.Fatalf("target not solved: %s: %v", ev.String(), ts.Values())
 			}
 			it := ev.CurItem()
@@ -141,6 +163,21 @@ func TestStats(t *testing.T) {
 			for i, v := range ts.Values() {
 				indep[i] += v / float64(n)
 			}
+			if m == 2 { // equal blend of the two valid groups in each slot
+				var o0, o1 []int
+				for _, in := range it.Inputs {
+					o0 = append(o0, sp.OutputIndex(&cfg, in, sp.GroupIndex(in, it.Valid[0]), 0))
+					o1 = append(o1, sp.OutputIndex(&cfg, in, sp.GroupIndex(in, it.Valid[1]), 0))
+				}
+				b0, b1 := slotChoice(ev, o0), slotChoice(ev, o1)
+				for k := range b0 {
+					b0[k] = 0.5 * (b0[k] + b1[k])
+				}
+				ev.TrialStats(b0, &ts)
+				if ts.Miss != 1 || ts.Margin > 0.01 {
+					t.Fatalf("blend not a miss: %s: %v", ev.String(), ts.Values())
+				}
+			}
 			// random: each slot picks a random one of its input's groups
 			for s, in := range it.Inputs {
 				outs[s] = sp.OutputIndex(&cfg, in, ev.Rand.Intn(cfg.GroupsPer), 0)
@@ -150,7 +187,7 @@ func TestStats(t *testing.T) {
 				cohRand[i] += v / float64(n)
 			}
 		}
-		t.Logf("m=%d %v", m, TrialStatNames)
+		t.Logf("m=%d GroupPats=%v %v", m, gp, TrialStatNames)
 		t.Logf("  random group per slot:      %.3f", cohRand)
 		t.Logf("  random valid group per slot: %.3f", indep)
 	}

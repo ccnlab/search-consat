@@ -17,7 +17,7 @@ var LayerParams = axon.LayerSheets{
 				ly.Acts.Noise.On.SetBool(false)
 				ly.Acts.Noise.Ge = 0.01
 				ly.Acts.Noise.Gi = 0.01
-				// ly.Acts.Decay.GBuffs.SetBool(true) // this is important for non-PFC layers
+				ly.Acts.Decay.GBuffs.SetBool(true) // this is important for non-PFC layers
 			}},
 		{Sel: ".Input", Doc: "one sparse pattern per slot pool: 20% activity",
 			Set: func(ly *axon.LayerParams) {
@@ -37,22 +37,22 @@ var LayerParams = axon.LayerSheets{
 				// ly.Inhib.Layer.Gi = 1.0
 				ly.Inhib.Pool.Gi = 1.0
 			}},
-		{Sel: "#Hidden", Doc: "coordinates the group choice across slots",
-			Set: func(ly *axon.LayerParams) {
-				ly.Inhib.ActAvg.Nominal = 0.02
-				ly.Inhib.ActAvg.Offset = 0.03
-				ly.Inhib.ActAvg.AdaptGi.SetBool(true)
-				ly.Inhib.Layer.On.SetBool(true)
-				ly.Inhib.Layer.Gi = 1.0
-			}},
+		// {Sel: "#Hidden", Doc: "coordinates the group choice across slots",
+		// 	Set: func(ly *axon.LayerParams) {
+		// 		ly.Inhib.ActAvg.Nominal = 0.02
+		// 		ly.Inhib.ActAvg.Offset = 0.03
+		// 		ly.Inhib.ActAvg.AdaptGi.SetBool(true)
+		// 		ly.Inhib.Layer.On.SetBool(true)
+		// 		ly.Inhib.Layer.Gi = 1.0
+		// 	}},
 		{Sel: "#Output", Doc: "one sparse pattern per slot pool: 20% activity",
 			Set: func(ly *axon.LayerParams) {
-				ly.Acts.Clamp.Ge = 0.8
+				ly.Acts.Clamp.Ge = 1.0
 				ly.Inhib.ActAvg.Nominal = 0.1
 				ly.Inhib.Layer.On.SetBool(false)
 				ly.Inhib.Pool.On.SetBool(true)
 				// ly.Inhib.Layer.Gi = 1.0
-				ly.Inhib.Pool.Gi = 0.95
+				ly.Inhib.Pool.Gi = 1.1
 			}},
 	},
 	"Test": {},
@@ -73,22 +73,22 @@ var PathParams = axon.PathSheets{
 			Set: func(pt *axon.PathParams) {
 				pt.PathScale.Rel = 0.2
 			}},
-		// {Sel: ".LateralPath", Doc: "self-connections among encode layers",
+		{Sel: ".LateralPath", Doc: "self-connections among encode layers",
+			Set: func(pt *axon.PathParams) {
+				pt.PathScale.Rel = 0.2
+			}},
+		// {Sel: "#HiddenToEncode", Doc: "back-path from hidden -- needs to be stronger",
 		// 	Set: func(pt *axon.PathParams) {
 		// 		pt.PathScale.Rel = 0.2
 		// 	}},
-		{Sel: "#HiddenToEncode", Doc: "back-path from hidden -- needs to be stronger",
-			Set: func(pt *axon.PathParams) {
-				pt.PathScale.Rel = 0.2
-			}},
-		{Sel: "#HiddenToOutput", Doc: "makes encoding worse..",
-			Set: func(pt *axon.PathParams) {
-				pt.PathScale.Rel = 0.2
-			}},
-		{Sel: "#EncodeToOutput", Doc: "",
-			Set: func(pt *axon.PathParams) {
-				pt.PathScale.Rel = 1.0
-			}},
+		// {Sel: "#HiddenToOutput", Doc: "makes encoding worse..",
+		// 	Set: func(pt *axon.PathParams) {
+		// 		pt.PathScale.Rel = 0.2
+		// 	}},
+		// {Sel: "#Encode2ToOutput", Doc: "",
+		// 	Set: func(pt *axon.PathParams) {
+		// 		pt.PathScale.Rel = 1.0
+		// 	}},
 	},
 	"Test": {},
 }

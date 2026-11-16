@@ -34,6 +34,14 @@ type Config struct {
 	// on each slot; these choices are independent across slots.
 	GroupN int
 
+	// GroupPats makes all the inputs in a group share the same GroupN
+	// output patterns, so that the output pattern identifies the group
+	// directly, and the same output pattern in different slots means the
+	// same group. Otherwise each (input, group) pair has its own
+	// output patterns, and the group is a diffuse, high-dimensional
+	// property of the output patterns that must be learned.
+	GroupPats bool
+
 	// NValid is the number of valid groups shared by all the inputs in
 	// an item (m = the size of the intersection of their groups).
 	// Only items with exactly this many valid groups are used.
@@ -59,7 +67,9 @@ type Config struct {
 
 	// MatchThr is the minimum cosine between the output activity in a
 	// slot and the closest output pattern for it to count as producing
-	// that pattern; otherwise it is a miss.
+	// that pattern; otherwise it is a miss. This must be high enough to
+	// reject blends of patterns: an equal blend of two patterns that share
+	// 3 of 10 active units has a cosine of 0.81 with each of them.
 	MatchThr float32
 
 	// Seed is the random seed for generating the vocabulary, the group
@@ -79,7 +89,7 @@ func (cfg *Config) Defaults() {
 	cfg.PctAct = 0.2
 	cfg.MaxOverlap = 0.5
 	cfg.TestPct = 0.5
-	cfg.MatchThr = 0.5
+	cfg.MatchThr = 0.9
 	cfg.Seed = 137
 }
 
@@ -98,8 +108,14 @@ func (cfg *Config) MinDiff() int {
 	return non - int(math.Floor(float64(cfg.MaxOverlap)*float64(non)))
 }
 
-// NOutputs returns the number of output patterns: NInputs * GroupsPer * GroupN.
-func (cfg *Config) NOutputs() int { return cfg.NInputs * cfg.GroupsPer * cfg.GroupN }
+// NOutputs returns the number of output patterns: NInputs * GroupsPer * GroupN,
+// or NGroups * GroupN if GroupPats.
+func (cfg *Config) NOutputs() int {
+	if cfg.GroupPats {
+		return cfg.NGroups * cfg.GroupN
+	}
+	return cfg.NInputs * cfg.GroupsPer * cfg.GroupN
+}
 
 // NVocab returns the total number of patterns in the vocabulary:
 // NInputs input patterns followed by NOutputs output patterns.
@@ -107,5 +123,5 @@ func (cfg *Config) NVocab() int { return cfg.NInputs + cfg.NOutputs() }
 
 // Key returns a string that identifies the item space for this config.
 func (cfg *Config) Key() string {
-	return fmt.Sprintf("s%d_n%d_G%d_g%d_gn%d_m%d_p%d_a%g_o%g_tp%g_sd%d", cfg.NSlots, cfg.NInputs, cfg.NGroups, cfg.GroupsPer, cfg.GroupN, cfg.NValid, cfg.PoolSize, cfg.PctAct, cfg.MaxOverlap, cfg.TestPct, cfg.Seed)
+	return fmt.Sprintf("s%d_n%d_G%d_g%d_gn%d_gp%v_m%d_p%d_a%g_o%g_tp%g_sd%d", cfg.NSlots, cfg.NInputs, cfg.NGroups, cfg.GroupsPer, cfg.GroupN, cfg.GroupPats, cfg.NValid, cfg.PoolSize, cfg.PctAct, cfg.MaxOverlap, cfg.TestPct, cfg.Seed)
 }

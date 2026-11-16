@@ -518,7 +518,7 @@ func (ss *Sim) ConfigStats() {
 	// get test stats in train log
 	ss.AddStatStd(egomlx.StatCopyLevel(ss.Stats, Train, Test, Epoch, Run, func(s *plot.Style, stName string) {
 		s.On = true
-	}, "Miss", "Valid", "NSame", "Coherent", "Solved"))
+	}, "Miss", "Valid", "NSame", "Coherent"))
 
 	lays := net.LayersByType(egomlx.Hidden, egomlx.Target)
 	ss.AddStatStd(egomlx.StatLayerAct(ss.Stats, net, Train, Trial, Run, lays...))
@@ -533,7 +533,7 @@ func (ss *Sim) ConfigStats() {
 	ss.AddStatStd(egomlx.StatLevelAll(ss.Stats, Train, Run, func(s *plot.Style, cl tensor.Values) {
 		name := metadata.Name(cl)
 		switch name {
-		case "Solved", "Test_Solved":
+		case "Coherent", "Test_Coherent":
 			s.On = true
 			s.Range.SetMin(0).SetMax(1)
 		}

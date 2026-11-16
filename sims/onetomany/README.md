@@ -2,6 +2,12 @@
 
 This is a focused test of learning a one-to-many mapping, which is the per-slot part of the [combsearch](../combsearch/README.md) task.
 
+Probably the most important factor here, which might have changed since last exploring this kind of task, is the output pathway learning mechanism, which just gets hammered down by the constant error signals.
+
+In general, this is not a very plausible learning mechanism biologically. Need to think about alternatives, presumably in terms of the pulvinar predictive learning system.
+
+Synaptic failure doesn't do anything in particular, except impair performance at higher levels.
+
 - There are n input patterns (`NInputs`, default 32).
 - Each input has o output patterns of its own (`NOut`, default 2).
 - On each trial, one of the inputs is presented (in a permuted order), and the target is one of its o outputs, chosen at random.

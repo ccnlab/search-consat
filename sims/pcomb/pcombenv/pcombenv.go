@@ -365,45 +365,6 @@ func (ev *PCombEnv) ValueCounts() (vals, probs []float32, counts []int) {
 	return
 }
 
-// Decode decodes value from a pattern of activation
-// as the activation-weighted-average of the unit's preferred
-// tuning values.
-// must have 2 or more values in pattern pat.
-func DecodePeak(pc *popcode.OneD, pat []float32, width int) float32 {
-	n := len(pat)
-	if n < 2 {
-		return 0
-	}
-	rng := pc.Max - pc.Min
-	incr := rng / float32(n-1)
-	mx := float32(0)
-	mxi := 0
-	for i := range pat {
-		sum := float32(0)
-		ns := 0
-		for j := -width; j < width; j++ {
-			if i+j < 0 || i+j >= n {
-				continue
-			}
-			act := pat[i]
-			if act < pc.Thr {
-				act = 0
-			}
-			sum += act
-			ns++
-		}
-		if ns > 0 {
-			sum /= float32(ns)
-		}
-		if sum > mx {
-			mx = sum
-			mxi = i
-		}
-	}
-	trg := pc.Min + incr*float32(mxi)
-	return trg
-}
-
 // Decode returns the value decoded from the given output pattern,
 // which must have PopCodeUnits.
 func (ev *PCombEnv) Decode(pat []float32) float32 {

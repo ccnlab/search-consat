@@ -47,12 +47,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				tsr.SetNumRows(0)
 				plot.SetFirstStyler(tsr, func(s *plot.Style) {
 					s.Range.SetMin(0).SetMax(1)
-					switch name {
-					case "MatchCos":
-						s.On = false
-					default:
-						s.On = true
-					}
+					s.On = true
 				})
 				metadata.SetDoc(tsr, otmenv.TrialStatDocs[name])
 			}

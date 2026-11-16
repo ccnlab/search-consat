@@ -40,6 +40,8 @@ sims/topdown/topdown/topdown
 sims/pcomb/pcomb/pcomb
 sims/consat_ff/consat_ff/consat_ff
 sims/pcomb_ff/pcomb_ff/pcomb_ff
+sims/combsearch/combsearch/combsearch
+sims/combsearch_ff/combsearch_ff/combsearch_ff
 
 # Sim outputs: logs, weights, results, run data
 *.tsv

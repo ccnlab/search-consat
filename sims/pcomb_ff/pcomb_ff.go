@@ -226,9 +226,9 @@ func (ss *Sim) ConfigNet(net *egomlx.Network) {
 	full := paths.NewFull()
 
 	net.ConnectLayers(val, venc, full, egomlx.Forward)
-	// net.ConnectLayers(prob, penc, full, egomlx.Forward)
+	net.ConnectLayers(prob, penc, full, egomlx.Forward)
 	net.ConnectLayers(venc, hid, full, egomlx.Forward)
-	// net.ConnectLayers(penc, hid, full, egomlx.Forward)
+	net.ConnectLayers(penc, hid, full, egomlx.Forward)
 	net.ConnectLayers(hid, out, full, egomlx.Forward)
 	net.ConnectLayers(hid, sal, full, egomlx.Forward)
 

@@ -87,8 +87,8 @@ type Config struct {
 }
 
 func (cfg *Config) Defaults() {
-	cfg.NCues = 4 // 6 is a bit harder than 4 but it does get there eventually
-	cfg.NActive.Set(2, 4)
+	cfg.NCues = 2 // 6 is a bit harder than 4 but it does get there eventually
+	cfg.NActive.Set(2, 2)
 	cfg.ProbStep = 0.2
 	cfg.ValueStep = 0.25
 	cfg.PopCodeUnits = 22
@@ -97,7 +97,7 @@ func (cfg *Config) Defaults() {
 	cfg.SalientHalf = 0.5
 	cfg.TestPct = 0.5
 	cfg.DistinctTrain = true
-	cfg.AgreePct = 0.5
+	cfg.AgreePct = 0.0
 	cfg.UniformN = false
 	cfg.MatchThr = 0.2
 	cfg.NBins = 10

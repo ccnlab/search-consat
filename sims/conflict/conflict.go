@@ -453,10 +453,10 @@ func (ss *Sim) UpdatePlots(mode Modes, level Levels) {
 	nm := mode.String() + " " + level.String() + " Plot"
 	tbs.GoUpdatePlot(nm)
 	switch level {
-	// case Trial:
-	// 	ev.UpdatePlot()
-	// 	fr := tbs.TabByName("Optimal")
-	// 	fr.Update()
+	case Epoch:
+		if mode == Test {
+			tbs.GoUpdatePlot("Test SecondRatioHist Plot")
+		}
 	case Run:
 		tbs.GoUpdatePlot("Train RunAll Plot")
 	}
@@ -497,6 +497,7 @@ func (ss *Sim) StatsInit() {
 		tbs.PlotTensorFS(axon.StatsNode(ss.Stats, Test, Epoch))
 		tbs.PlotTensorFS(axon.StatsNode(ss.Stats, Test, Trial))
 		tbs.PlotTensorFS(ss.Stats.Dir("Train/RunAll"))
+		tbs.PlotTensorFS(ss.Stats.Dir("Test/SecondRatioHist"))
 		tbs.SelectTabIndex(idx)
 	}
 }
@@ -518,9 +519,10 @@ func (ss *Sim) ConfigStats() {
 
 	ss.AddStat(ss.StatOutput())
 	ss.PatternDistMatrix()
+	ss.AddStat(ss.StatSecondHist(10))
 
 	// get test stats in train log
-	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondOverTop", "OtherOverTop", "MatchCos", "Slot0", "RepeatPrev"}, ss.targetNames()...)...))
+	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev"}, ss.targetNames()...)...))
 
 	lays := net.LayersByType(axon.SuperLayer, axon.CTLayer, axon.InputLayer, axon.TargetLayer)
 	ss.AddStatStd(axon.StatLayerActGe(ss.Stats, net, Train, Trial, Run, lays...))
@@ -562,7 +564,7 @@ func (ss *Sim) StatCounters(mode, level enums.Enum) string {
 		return counters
 	}
 	counters += fmt.Sprintf(" TrialName: %s", curModeDir.StringValue("TrialName").String1D(di))
-	statNames := []string{"Blend", "Intrusion", "SecondOverTop", "OtherOverTop"}
+	statNames := []string{"Blend", "Intrusion", "SecondRatio", "OtherRatio"}
 	if level == Cycle || curModeDir.Node(statNames[0]) == nil {
 		return counters
 	}
@@ -600,7 +602,7 @@ func (ss *Sim) ConfigGUI(b tree.Node) {
 	// ev.MakePlot()
 	// tbs.SelectTabIndex(idx)
 
-	ss.PatternDistGrid()
+	// ss.PatternDistGrid()
 	ss.StatsInit()
 	ss.GUI.FinalizeGUI(false)
 }

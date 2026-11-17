@@ -10,3 +10,4 @@ import (
 )
 
 func main() { egui.Run[conflict.Sim, conflict.Config]() }
+

@@ -142,4 +142,13 @@ func TestTestCopy(t *testing.T) {
 	if ss.Root.Dir("Patterns").Dir("Items").Node("G0") == nil {
 		t.Errorf("patterns not saved")
 	}
+	props := ss.Stats.Dir("Test/SecondRatioHist").Float64("Prop").Values
+	sum := 0.0
+	for _, p := range props {
+		sum += p
+	}
+	t.Logf("Test SecondRatio hist: %v", props)
+	if len(props) != 10 || math.Abs(sum-1) > 1e-6 {
+		t.Errorf("histogram proportions sum to %g", sum)
+	}
 }

@@ -31,16 +31,23 @@ func (cfg *Config) Vocab() *tensor.Float32 {
 	}
 	vc := cfg.MakeVocab()
 	vocabs[key] = vc
-	fmt.Printf("vocab: %d patterns (%d inputs + %d outputs, %d per input), %dx%d, %d active, min diff %d\n", cfg.NVocab(), cfg.NInputs, cfg.NOutputs(), cfg.NOut, cfg.PoolSize, cfg.PoolSize, cfg.NOn(), cfg.MinDiff())
+	fmt.Printf("vocab: %d patterns (%d inputs + %d outputs, %d per input), %dx%d, %d active, min diff %d within inputs and within outputs\n", cfg.NVocab(), cfg.NInputs, cfg.NOutputs(), cfg.NOut, cfg.PoolSize, cfg.PoolSize, cfg.NOn(), cfg.MinDiff())
 	return vc
 }
 
 // MakeVocab generates the vocabulary using [Config.Seed],
-// with [patterns.PermutedBinaryMinDiff].
+// with [patterns.PermutedBinaryMinDiff]: the input patterns and the output
+// patterns are generated as separate sets, each with MinDiff. The overlap
+// between inputs and outputs does not matter.
 func (cfg *Config) MakeVocab() *tensor.Float32 {
 	ps := cfg.PoolSize
 	vc := tensor.NewFloat32(cfg.NVocab(), ps, ps)
 	patterns.NewRand(cfg.Seed)
-	errors.Log(patterns.PermutedBinaryMinDiff(vc, cfg.NOn(), 1, 0, cfg.MinDiff()))
+	inps := tensor.NewFloat32(cfg.NInputs, ps, ps)
+	errors.Log(patterns.PermutedBinaryMinDiff(inps, cfg.NOn(), 1, 0, cfg.MinDiff()))
+	outs := tensor.NewFloat32(cfg.NOutputs(), ps, ps)
+	errors.Log(patterns.PermutedBinaryMinDiff(outs, cfg.NOn(), 1, 0, cfg.MinDiff()))
+	copy(vc.Values, inps.Values)
+	copy(vc.Values[len(inps.Values):], outs.Values)
 	return vc
 }

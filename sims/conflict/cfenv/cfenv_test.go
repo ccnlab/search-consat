@@ -271,12 +271,12 @@ func TestStats(t *testing.T) {
 			other++
 		}
 		ev.TrialStats(mix(map[int]float32{a: 0.9}), &ts)
-		if ts.Blend != 0 || ts.Intrusion != 0 || ts.Choice != a || ts.OtherOverTop != 0 || ts.MatchCos < 0.95 {
+		if ts.Blend != 0 || ts.Intrusion != 0 || ts.Choice != a || ts.OtherRatio != 0 || ts.MatchCos < 0.95 {
 			t.Fatalf("clean choice: %s: %v", ev.String(), ts.Values())
 		}
 		// other group below the intrusion ratio: still a choice
 		ev.TrialStats(mix(map[int]float32{a: 0.9, other: 0.4}), &ts)
-		if ts.Intrusion != 0 || ts.Choice != a || math.Abs(ts.OtherOverTop-0.4/0.9) > 1e-5 {
+		if ts.Intrusion != 0 || ts.Choice != a || math.Abs(ts.OtherRatio-0.4/0.9) > 1e-5 {
 			t.Fatalf("other below ratio: %s: %v", ev.String(), ts.Values())
 		}
 		// other group above the intrusion ratio
@@ -286,20 +286,20 @@ func TestStats(t *testing.T) {
 		}
 		ev.TrialStats(mix(map[int]float32{a: 0.9}), &ts) // reset PrevChoice to a
 		if it.NConflict == 0 {
-			if ts.Probs[0] != 1 || !math.IsNaN(ts.Probs[1]) || !math.IsNaN(ts.Slot0) || !math.IsNaN(ts.SecondOverTop) {
+			if ts.Probs[0] != 1 || !math.IsNaN(ts.Probs[1]) || !math.IsNaN(ts.Slot0) || !math.IsNaN(ts.SecondRatio) {
 				t.Fatalf("consistent: %s: %v %v", ev.String(), ts.Values(), ts.Probs)
 			}
 			continue
 		}
 		b := it.Groups[1]
-		if ts.Probs[1] != 0.5 || !math.IsNaN(ts.Probs[0]) || math.IsNaN(ts.Slot0) || ts.SecondOverTop != 0 {
+		if ts.Probs[1] != 0.5 || !math.IsNaN(ts.Probs[0]) || math.IsNaN(ts.Slot0) || ts.SecondRatio != 0 {
 			t.Fatalf("conflict: %s: %v %v", ev.String(), ts.Values(), ts.Probs)
 		}
 		nslot0 += ts.Slot0
 		nconf++
 		// partial activity of the second group, above the blend ratio: B is top
-		ev.TrialStats(mix(map[int]float32{a: 0.4, b: 0.8}), &ts)
-		if ts.Blend != 0 || ts.Choice != b || math.Abs(ts.SecondOverTop-0.5) > 1e-5 || ts.RepeatPrev != 0 {
+		ev.TrialStats(mix(map[int]float32{a: 0.35, b: 0.8}), &ts)
+		if ts.Blend != 0 || ts.Choice != b || math.Abs(ts.SecondRatio-0.35/0.8) > 1e-5 || ts.RepeatPrev != 0 {
 			t.Fatalf("partial: %s: %v", ev.String(), ts.Values())
 		}
 		// below the blend ratio
@@ -309,7 +309,7 @@ func TestStats(t *testing.T) {
 		}
 		// no activity above threshold
 		ev.TrialStats(mix(nil), &ts)
-		if ts.Blend != 1 || ts.Intrusion != 0 || !math.IsNaN(ts.OtherOverTop) {
+		if ts.Blend != 1 || ts.Intrusion != 0 || !math.IsNaN(ts.OtherRatio) {
 			t.Fatalf("no activity: %v", ts.Values())
 		}
 	}

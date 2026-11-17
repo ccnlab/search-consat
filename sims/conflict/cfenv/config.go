@@ -70,15 +70,15 @@ type Config struct {
 	// activity of each group: low-level activity is ignored.
 	ActThr float32
 
-	// BlendRatio is the minimum ratio of the summed output activity of the
-	// top input group to the second input group, for choosing the top group.
-	// Otherwise it is a Blend.
-	BlendRatio float32
+	// BlendThr is the maximum SecondRatio (the summed output activity of
+	// the second input group over that of the top input group) for choosing
+	// the top group. Above it is a Blend.
+	BlendThr float32
 
-	// IntrusionRatio is the minimum ratio of the summed output activity of
-	// the top input group to that of all the other (non-input) groups.
-	// Otherwise it is an Intrusion.
-	IntrusionRatio float32
+	// IntrusionThr is the maximum OtherRatio (the summed output activity of
+	// all the other, non-input groups over that of the top input group).
+	// Above it is an Intrusion.
+	IntrusionThr float32
 
 	// TestPerLevel is the number of random test items for each number of
 	// conflicting inputs. 0 = all of the items.
@@ -105,8 +105,8 @@ func (cfg *Config) Defaults() {
 	cfg.FlipPct = 0.2
 	cfg.NPerOutput = 6
 	cfg.ActThr = 0.1
-	cfg.BlendRatio = 1.5
-	cfg.IntrusionRatio = 2
+	cfg.BlendThr = 0.75
+	cfg.IntrusionThr = 0.5
 	cfg.TestPerLevel = 0
 	cfg.TestReps = 20
 	cfg.Seed = 137

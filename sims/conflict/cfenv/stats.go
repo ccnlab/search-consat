@@ -15,18 +15,18 @@ import (
 // TrialStatNames are the names of the fixed per-trial stats,
 // in the order returned by [TrialStats.Values]. The probability
 // stats for each target probability follow (see [CFEnv.TargetNames]).
-var TrialStatNames = []string{"Blend", "Intrusion", "SecondOverTop", "OtherOverTop", "MatchCos", "Slot0", "RepeatPrev"}
+var TrialStatNames = []string{"Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev"}
 
 // TrialStatDocs are the descriptions of the trial stats.
 var TrialStatDocs = map[string]string{
-	"Blend":         "1 if the two input groups are too close: SecondOverTop is above 1/BlendRatio (and it is not an Intrusion), or there is no output activity.",
-	"Intrusion":     "1 if the activity of the groups that are not in the inputs is too high: OtherOverTop is above 1/IntrusionRatio.",
-	"SecondOverTop": "On conflict trials: the summed (thresholded) output activity of the second input group, divided by that of the top input group (the one with more activity).",
-	"OtherOverTop":  "The summed (thresholded) output activity of all the groups that are not in the inputs, divided by that of the top input group, capped at 1.",
-	"MatchCos":      "Cosine between the output activity and the closest output pattern.",
-	"Slot0":         "On conflict trials with a choice of one of the input groups: 1 if it is the group in slot 0. 0.5 = no slot bias for 2 slots.",
-	"RepeatPrev":    "On conflict trials with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats the previous one. 0.5 = no carryover bias for 2 slots.",
-	"AbsDiff":       "Mean across target probabilities of the absolute difference between the measured probability (P<target>) and the target.",
+	"Blend":       "1 if the two input groups are too close: SecondRatio is above BlendThr (and it is not an Intrusion), or there is no output activity.",
+	"Intrusion":   "1 if the activity of the groups that are not in the inputs is too high: OtherRatio is above IntrusionThr.",
+	"SecondRatio": "On conflict trials: the summed (thresholded) output activity of the second input group, divided by that of the top input group (the one with more activity).",
+	"OtherRatio":  "The summed (thresholded) output activity of all the groups that are not in the inputs, divided by that of the top input group, capped at 1.",
+	"MatchCos":    "Cosine between the output activity and the closest output pattern.",
+	"Slot0":       "On conflict trials with a choice of one of the input groups: 1 if it is the group in slot 0. 0.5 = no slot bias for 2 slots.",
+	"RepeatPrev":  "On conflict trials with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats the previous one. 0.5 = no carryover bias for 2 slots.",
+	"AbsDiff":     "Mean across target probabilities of the absolute difference between the measured probability (P<target>) and the target.",
 }
 
 // TargetName returns the stat name for a target probability as a
@@ -50,7 +50,7 @@ func (ev *CFEnv) TargetNames() []string {
 
 // TrialStats has the stats for one trial.
 type TrialStats struct {
-	Blend, Intrusion, SecondOverTop, OtherOverTop, MatchCos, Slot0, RepeatPrev float64
+	Blend, Intrusion, SecondRatio, OtherRatio, MatchCos, Slot0, RepeatPrev float64
 
 	// Probs are the per-trial probability stats for each target in
 	// [Space.Targets]: the mean over the input groups with that expected
@@ -67,7 +67,7 @@ type TrialStats struct {
 
 // Values returns the fixed stats in the order of [TrialStatNames].
 func (ts *TrialStats) Values() []float64 {
-	return []float64{ts.Blend, ts.Intrusion, ts.SecondOverTop, ts.OtherOverTop, ts.MatchCos, ts.Slot0, ts.RepeatPrev}
+	return []float64{ts.Blend, ts.Intrusion, ts.SecondRatio, ts.OtherRatio, ts.MatchCos, ts.Slot0, ts.RepeatPrev}
 }
 
 // Cosine returns the cosine between a and b (0 if either is all zeros).
@@ -149,22 +149,22 @@ func (ev *CFEnv) TrialStats(out []float32, ts *TrialStats) {
 		}
 	}
 	topAct := ts.GroupActs[top]
-	ts.SecondOverTop, ts.OtherOverTop = math.NaN(), math.NaN()
+	ts.SecondRatio, ts.OtherRatio = math.NaN(), math.NaN()
 	if topAct > 0 {
-		ts.OtherOverTop = math.Min(float64(other/topAct), 1)
+		ts.OtherRatio = math.Min(float64(other/topAct), 1)
 		if second >= 0 {
-			ts.SecondOverTop = float64(ts.GroupActs[second] / topAct)
+			ts.SecondRatio = float64(ts.GroupActs[second] / topAct)
 		}
 	} else if other > 0 {
-		ts.OtherOverTop = 1
+		ts.OtherRatio = 1
 	}
 	ts.Blend, ts.Intrusion = 0, 0
 	ts.Choice = top
 	switch {
-	case other > 0 && ts.OtherOverTop > 1/float64(cfg.IntrusionRatio):
+	case other > 0 && ts.OtherRatio > float64(cfg.IntrusionThr):
 		ts.Intrusion = 1
 		ts.Choice = otherG
-	case topAct == 0 || (second >= 0 && ts.SecondOverTop > 1/float64(cfg.BlendRatio)):
+	case topAct == 0 || (second >= 0 && ts.SecondRatio > float64(cfg.BlendThr)):
 		ts.Blend = 1
 		ts.Choice = -1
 	}

@@ -190,20 +190,35 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	ps := ev.Configs.PoolSize
 	es := ss.Config.Params.EncodeSize
 
-	// equivalent to one slot of the combsearch network
+	// equivalent to one slot of the combsearch network, with NHidden
+	// Encode layers: Encode, Encode2, Encode3, ...
 	inp := net.AddLayer2D("Input", axon.InputLayer, ps, ps).AddClass("Input")
-	enc := net.AddLayer2D("Encode", axon.SuperLayer, es, es).AddClass("Encode")
-	enc2 := net.AddLayer2D("Encode2", axon.SuperLayer, es, es).AddClass("Encode")
 	out := net.AddLayer2D("Output", axon.TargetLayer, ps, ps).AddClass("Target")
 
-	enc.PlaceAbove(inp)
-	enc2.PlaceRightOf(enc, 2)
-	out.PlaceAbove(enc)
-
 	full := paths.NewFull()
-	net.ConnectLayers(inp, enc, full, axon.ForwardPath)
-	net.BidirConnectLayers(enc, enc2, full)
-	net.BidirConnectLayers(enc2, out, full)
+	var enc, prev *axon.Layer
+	for i := range max(ss.Config.Params.NHidden, 1) {
+		name := "Encode"
+		if i > 0 {
+			name = fmt.Sprintf("Encode%d", i+1)
+		}
+		ly := net.AddLayer2D(name, axon.SuperLayer, es, es).AddClass("Encode")
+		if i == 0 {
+			enc = ly
+			ly.PlaceAbove(inp)
+			net.ConnectLayers(inp, ly, full, axon.ForwardPath)
+		} else {
+			ly.PlaceRightOf(prev, 2)
+			net.BidirConnectLayers(prev, ly, full)
+		}
+		prev = ly
+	}
+	out.PlaceAbove(enc)
+	toOut, _ := net.BidirConnectLayers(prev, out, full)
+	toOut.AddClass("ToOutput")
+	if ss.Config.Params.OutputLateral {
+		net.LateralConnectLayer(out, full)
+	}
 
 	net.Build()
 	net.Defaults()
@@ -429,6 +444,10 @@ func (ss *Sim) UpdatePlots(mode Modes, level Levels) {
 	nm := mode.String() + " " + level.String() + " Plot"
 	tbs.GoUpdatePlot(nm)
 	switch level {
+	case Epoch:
+		if mode == Train {
+			tbs.GoUpdatePlot("Train SecondRatioHist Plot")
+		}
 	// case Trial:
 	// 	ev.UpdatePlot()
 	// 	fr := tbs.TabByName("Optimal")
@@ -473,6 +492,7 @@ func (ss *Sim) StatsInit() {
 		tbs.PlotTensorFS(axon.StatsNode(ss.Stats, Test, Epoch))
 		tbs.PlotTensorFS(axon.StatsNode(ss.Stats, Test, Trial))
 		tbs.PlotTensorFS(ss.Stats.Dir("Train/RunAll"))
+		tbs.PlotTensorFS(ss.Stats.Dir("Train/SecondRatioHist"))
 		tbs.SelectTabIndex(idx)
 	}
 }
@@ -493,6 +513,7 @@ func (ss *Sim) ConfigStats() {
 	ss.AddStatStd(axon.StatPerTrialMSec(ss.Stats, Train, Trial))
 
 	ss.AddStat(ss.StatOutput())
+	ss.AddStat(ss.StatSecondHist(10))
 
 	// get test stats in train log
 	// ss.AddStatStd(axon.StatCopyLevel(ss.Stats, Train, Test, Epoch, Run, func(s *plot.Style, stName string) {

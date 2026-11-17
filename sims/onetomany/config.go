@@ -21,8 +21,17 @@ type EnvConfig struct {
 // ParamConfig has config parameters related to sim params.
 type ParamConfig struct {
 
-	// EncodeSize is the size of the Encode and Encode2 layers (square).
+	// NHidden is the number of Encode (hidden) layers, connected
+	// bidirectionally in a stack between the Input and the Output:
+	// Encode, Encode2, Encode3, ...
+	NHidden int `default:"2" min:"1"`
+
+	// EncodeSize is the size of the Encode layers (square).
 	EncodeSize int `default:"12"`
+
+	// OutputLateral adds full lateral (self) connections within the Output
+	// layer, for more competition between the output patterns.
+	OutputLateral bool
 
 	// Script is an interpreted script that is run to set parameters in Layer and Path
 	// sheets, by default using the "Script" set name.

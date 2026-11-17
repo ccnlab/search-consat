@@ -64,8 +64,8 @@ The network is a model of cortex, which only needs to show a reasonable amount o
 - The Output minus-phase activity (ActM) is thresholded at `ActThr` (0.1), to ignore low-level activity, and summed over the units of each group's output pattern (its bar). With `RandOutput`, a unit shared by two patterns counts for both.
 - **Top** is the input group with the most activity, **Second** is the other input group (on conflict trials), and **Other** is the summed activity of all the groups that are not in the inputs.
 - The output is categorized as:
-  1. **Intrusion**, if Top / Other < `IntrusionRatio` (2). The choice is then the most active other group.
-  2. **Blend**, if Top / Second < `BlendRatio` (1.5), or there is no activity above threshold.
+  1. **Intrusion**, if `OtherRatio` = Other / Top > `IntrusionThr` (0.5). The choice is then the most active other group.
+  2. **Blend**, if `SecondRatio` = Second / Top > `BlendThr` (0.75), or there is no activity above threshold.
   3. Otherwise, a **choice** of Top.
 
 | Stat | Meaning |
@@ -74,15 +74,16 @@ The network is a model of cortex, which only needs to show a reasonable amount o
 | `AbsDiff` | Mean across the target probabilities of \|measured − target\| |
 | `Blend` | Proportion of trials that are blends |
 | `Intrusion` | Proportion of trials that are intrusions |
-| `SecondOverTop` | Second / Top activity, on conflict trials: 0 = only Top, 1 = equal. A blend is above 1 / `BlendRatio` = 0.67 |
-| `OtherOverTop` | Other / Top activity, capped at 1. An intrusion is above 1 / `IntrusionRatio` = 0.5 |
+| `SecondRatio` | Second / Top activity, on conflict trials: 0 = only Top, 1 = equal. A blend is above `BlendThr` (0.75) |
+| `OtherRatio` | Other / Top activity, capped at 1. An intrusion is above `IntrusionThr` (0.5) |
 | `MatchCos` | Cosine between the output and the closest output pattern, as a raw diagnostic |
 | `Slot0` | On conflict trials with a choice of an input group: 1 if it is the group in slot 0. 0.5 = no slot bias (for k = 2) |
 | `RepeatPrev` | On conflict trials with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats it. 0.5 = no carryover bias (for k = 2) |
 
-- The ratios are logged as fractions of Top (from 0 to 1) so that they average cleanly. A missing Second or Other gives 0, instead of an infinite ratio.
+- The ratios are relative to Top (from 0 to 1), so they average cleanly, and a missing Second or Other gives 0 instead of an infinite ratio.
 - The probability stats are computed per trial (the mean over the input groups with that target of whether each was chosen, NaN if none), and averaged over trials.
 - For k = 2, `P50` combines both groups on conflict trials, so it is (1 − `Blend` − `Intrusion`) / 2 on those trials. The symmetry between the two groups is measured by `Slot0`.
+- `Stats/Test/SecondRatioHist` (the `Test SecondRatioHist` bar plot tab) has the distribution of `SecondRatio` across the conflict trials in testing, in 10 bins from 0 to 1, as the proportion of trials in each bin. The counts are accumulated over all the tests from training epoch `Epochs` / 2 on (including the final test), in each run. Before that, it shows the last test. This distinguishes a mix of clear choices (near 0) and blends (near 1) from a consistent partial preference.
 - The Train Epoch and Run logs have the latest test values as `Test_<stat>`: each epoch has the values from the latest test in the run (NaN before the first one), so they plot as a step line. The Run value is from the final test.
 
 ## Results

@@ -30,15 +30,23 @@ type Config struct {
 	PctAct float32
 
 	// MaxOverlap is the maximum proportion of active units that any
-	// two patterns in the vocabulary can share.
+	// two input patterns, or any two output patterns, can share.
+	// The inputs and outputs are generated as separate sets.
 	MaxOverlap float32
 
-	// MatchThr is the minimum cosine between the output activity and
-	// the closest output pattern for it to count as producing that
-	// pattern. This must be high enough to reject blends of patterns:
-	// an equal blend of two patterns that share 3 of 10 active units has
-	// a cosine of 0.81 with each of them.
-	MatchThr float32
+	// ActThr is the threshold on output unit activity for summing the
+	// activity of each output pattern: low-level activity is ignored.
+	ActThr float32
+
+	// BlendThr is the maximum SecondRatio (the summed output activity of
+	// the input's second output over that of its top output) for choosing
+	// the top output. Above it is a Blend.
+	BlendThr float32
+
+	// IntrusionThr is the maximum OtherRatio (the summed output activity
+	// outside all of the input's outputs over that of its top output).
+	// Above it is an Intrusion.
+	IntrusionThr float32
 
 	// Seed is the random seed for generating the vocabulary, which is
 	// shared across all envs and runs.
@@ -51,7 +59,9 @@ func (cfg *Config) Defaults() {
 	cfg.PoolSize = 7
 	cfg.PctAct = 0.2
 	cfg.MaxOverlap = 0.5
-	cfg.MatchThr = 0.9
+	cfg.ActThr = 0.1
+	cfg.BlendThr = 0.75
+	cfg.IntrusionThr = 0.5
 	cfg.Seed = 137
 }
 
@@ -64,7 +74,8 @@ func (cfg *Config) NOn() int {
 }
 
 // MinDiff returns the minimum number of active units that must differ
-// between any two patterns, to satisfy MaxOverlap.
+// between any two input patterns, or any two output patterns,
+// to satisfy MaxOverlap.
 func (cfg *Config) MinDiff() int {
 	non := cfg.NOn()
 	return non - int(math.Floor(float64(cfg.MaxOverlap)*float64(non)))

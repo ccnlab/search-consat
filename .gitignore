@@ -54,3 +54,4 @@ simmer.json
 # Local config files for experimentation: config.go defaults hold the good values
 sims/**/config*.toml
 sims/onetomany/onetomany/onetomany
+sims/conflict/conflict/conflict

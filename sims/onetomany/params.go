@@ -42,12 +42,12 @@ var LayerParams = axon.LayerSheets{
 			}},
 		{Sel: "#Output", Doc: "one sparse pattern: 20% activity",
 			Set: func(ly *axon.LayerParams) {
-				ly.Acts.Clamp.Ge = 1.5
+				ly.Acts.Clamp.Ge = 0.8
 				ly.Acts.Spikes.Tr = 1             // 1 is new minimum.. > 3
 				ly.Learn.RLRate.SigmoidMin = 0.05 // sigmoid derivative actually useful here!
 				ly.Inhib.ActAvg.Nominal = 0.1
 				ly.Inhib.Layer.On.SetBool(true)
-				ly.Inhib.Layer.Gi = 1.0
+				ly.Inhib.Layer.Gi = 1.1
 			}},
 	},
 	"Test": {},
@@ -81,6 +81,7 @@ var PathParams = axon.PathSheets{
 				// pt.Learn.LRate.Base = 0.005 // .005 > .01
 				pt.PathScale.Abs = 1
 				pt.Com.PFail = 0
+				// pt.Learn.DWt.CaPScale = 0.95 // not helpful
 			}},
 	},
 	"Test": {},

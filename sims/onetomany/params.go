@@ -22,7 +22,7 @@ var LayerParams = axon.LayerSheets{
 				ly.Acts.Noise.On.SetBool(false)
 				ly.Acts.Noise.Ge = 0.01
 				ly.Acts.Noise.Gi = 0.01
-				// ly.Acts.Decay.GBuffs.SetBool(true) // this is important for non-PFC layers
+				// ly.Acts.Decay.GBuffs.SetBool(true) // not helpful
 			}},
 		{Sel: ".Input", Doc: "one sparse pattern: 20% activity",
 			Set: func(ly *axon.LayerParams) {

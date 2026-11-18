@@ -24,7 +24,7 @@ var LayerParams = axon.LayerSheets{
 			}},
 		{Sel: ".Input", Doc: "one sparse pattern per slot pool: 20% activity",
 			Set: func(ly *axon.LayerParams) {
-				ly.Inhib.ActAvg.Nominal = 0.08
+				ly.Inhib.ActAvg.Nominal = 0.05
 				ly.Inhib.Layer.On.SetBool(false)
 				ly.Inhib.Pool.On.SetBool(true)
 				ly.Inhib.Layer.Gi = 0.95
@@ -32,19 +32,30 @@ var LayerParams = axon.LayerSheets{
 				ly.Acts.Decay.Act = 1 // this is subtly beneficial
 				ly.Acts.Decay.Glong = 1
 			}},
+		{Sel: ".Encoder", Doc: "",
+			Set: func(ly *axon.LayerParams) {
+				ly.Inhib.ActAvg.Nominal = 0.02 // .06 in ra25x
+				ly.Inhib.ActAvg.Offset = 0.03  // .03 best
+				ly.Inhib.ActAvg.AdaptGi.SetBool(true)
+				ly.Inhib.Layer.On.SetBool(true)
+				ly.Inhib.Layer.Gi = 1.05
+				ly.Inhib.Layer.FB = 1 // 1.0 default; ra25x: 0.5
+				ly.Inhib.Pool.On.SetBool(true)
+				ly.Inhib.Pool.Gi = 1.05
+			}},
 		{Sel: ".Hidden", Doc: "",
 			Set: func(ly *axon.LayerParams) {
 				ly.Inhib.ActAvg.Nominal = 0.02 // .06 in ra25x
 				ly.Inhib.ActAvg.Offset = 0.03  // .03 best
 				ly.Inhib.ActAvg.AdaptGi.SetBool(true)
 				ly.Inhib.Layer.On.SetBool(true)
-				ly.Inhib.Layer.Gi = 1.0
-				ly.Inhib.Layer.FB = 4 // 1.0 default; ra25x: 0.5
+				ly.Inhib.Layer.Gi = 1.1
+				ly.Inhib.Layer.FB = 1 // 1.0 default; ra25x: 0.5
 			}},
 		{Sel: "#Output", Doc: "one bar of NGroups: 20% activity",
 			Set: func(ly *axon.LayerParams) {
 				ly.Acts.Clamp.Ge = 0.8
-				ly.Inhib.ActAvg.Nominal = 0.1
+				ly.Inhib.ActAvg.Nominal = 0.15
 				ly.Inhib.Layer.On.SetBool(true)
 				ly.Inhib.Layer.Gi = 1.05
 				// ly.Acts.Spikes.Tr = 1             // 1 is new minimum.. > 3
@@ -69,12 +80,12 @@ var PathParams = axon.PathSheets{
 			}},
 		{Sel: ".BackPath", Doc: "top-down back-pathways MUST have lower relative weight scale, otherwise network hallucinates",
 			Set: func(pt *axon.PathParams) {
-				pt.PathScale.Rel = 0.3
+				pt.PathScale.Rel = 0.2
 			}},
-		// {Sel: ".LateralPath", Doc: "lateral connections within the hidden layers and Output (if Lateral, OutputLateral)",
-		// 	Set: func(pt *axon.PathParams) {
-		// 		pt.PathScale.Rel = 0.2
-		// 	}},
+		{Sel: ".LateralPath", Doc: "lateral connections within the hidden layers and Output (if Lateral, OutputLateral)",
+			Set: func(pt *axon.PathParams) {
+				pt.PathScale.Rel = 0.2
+			}},
 	},
 	"Test": {},
 }

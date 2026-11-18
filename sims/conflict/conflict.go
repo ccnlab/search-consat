@@ -199,21 +199,22 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	cfg := &ev.Configs
 	ps := cfg.PoolSize
 	pc := &ss.Config.Params
+	es := pc.EncoderSize
 	hs := pc.HiddenSize
 
 	inp := net.AddLayer4D("Input", axon.InputLayer, 1, cfg.NSlots, ps, ps).AddClass("Input")
 	out := net.AddLayer2D("Output", axon.TargetLayer, cfg.NPerOutput, cfg.NGroups).AddClass("Target")
+	enc := net.AddLayer4D("Encoder", axon.SuperLayer, 1, cfg.NSlots, es, es).AddClass("Encoder")
+	enc.PlaceAbove(inp)
 
+	p1to1 := paths.NewPoolOneToOne()
+	net.ConnectLayers(inp, enc, p1to1, axon.ForwardPath)
 	full := paths.NewFull()
-	prev := inp
+	prev := enc
 	for i := range pc.NHidden {
 		hid := net.AddLayer2D(fmt.Sprintf("Hidden%d", i+1), axon.SuperLayer, hs, hs).AddClass("Hidden")
 		hid.PlaceAbove(prev)
-		if i == 0 {
-			net.ConnectLayers(inp, hid, full, axon.ForwardPath)
-		} else {
-			net.BidirConnectLayers(prev, hid, full)
-		}
+		net.BidirConnectLayers(prev, hid, full)
 		if pc.Lateral {
 			net.LateralConnectLayer(hid, full)
 		}

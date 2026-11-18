@@ -23,10 +23,13 @@ type ParamConfig struct {
 
 	// NHidden is the number of hidden layers, connected bidirectionally
 	// in a stack between the Input and the Output.
-	NHidden int `default:"2" min:"1"`
+	NHidden int `default:"1" min:"1"`
+
+	// EncoderSize is the size of each encoder layer pool (square).
+	EncoderSize int `default:"12"`
 
 	// HiddenSize is the size of each hidden layer (square).
-	HiddenSize int `default:"15"`
+	HiddenSize int `default:"20"`
 
 	// Lateral adds full lateral (self) connections within each hidden layer.
 	Lateral bool

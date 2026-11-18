@@ -106,7 +106,7 @@ func (cfg *Config) Defaults() {
 	cfg.NPerOutput = 6
 	cfg.ActThr = 0.1
 	cfg.BlendThr = 0.75
-	cfg.IntrusionThr = 0.5
+	cfg.IntrusionThr = 0.75
 	cfg.TestPerLevel = 0
 	cfg.TestReps = 20
 	cfg.Seed = 137

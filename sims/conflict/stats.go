@@ -72,7 +72,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				plot.SetFirstStyler(tsr, func(s *plot.Style) {
 					s.Range.SetMin(0).SetMax(1)
 					switch name {
-					case "P100", "AbsDiff", "Blend":
+					case "P100", "AbsDiff", "Blend", "Intrusion":
 						s.On = true
 					}
 					if mode == Test && name[0] == 'P' {
@@ -157,7 +157,7 @@ func (ss *Sim) StatTestCopy(names ...string) func(mode Modes, level Levels, star
 				tsr.SetNumRows(0)
 				plot.SetFirstStyler(tsr, func(s *plot.Style) {
 					s.Range.SetMin(0).SetMax(1)
-					s.On = snm == "AbsDiff"
+					s.On = true
 				})
 				continue
 			}

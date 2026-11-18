@@ -15,25 +15,56 @@ import (
 // TrialStatNames are the names of the fixed per-trial stats,
 // in the order returned by [TrialStats.Values]. The probability
 // stats for each target probability follow (see [CFEnv.TargetNames]).
-var TrialStatNames = []string{"Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev"}
+var TrialStatNames = []string{"Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev"}
 
 // TrialStatDocs are the descriptions of the trial stats.
 var TrialStatDocs = map[string]string{
-	"Blend":       "1 if the two input groups are too close: SecondRatio is above BlendThr (and it is not an Intrusion), or there is no output activity.",
-	"Intrusion":   "1 if the activity of the groups that are not in the inputs is too high: OtherRatio is above IntrusionThr.",
-	"SecondRatio": "On conflict trials: the summed (thresholded) output activity of the second input group, divided by that of the top input group (the one with more activity).",
-	"OtherRatio":  "The summed (thresholded) output activity of all the groups that are not in the inputs, divided by that of the top input group, capped at 1.",
-	"MatchCos":    "Cosine between the output activity and the closest output pattern.",
-	"Slot0":       "On tied conflict trials (two input groups with equal evidence) with a choice of one of them: 1 if it is the group in slot 0. 0.5 = no slot bias.",
-	"RepeatPrev":  "On tied conflict trials (two input groups with equal evidence) with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats the previous one. 0.5 = no carryover bias.",
-	"Consist":     "Test only: the consistency of the choice for the same conflict item across its repetitions: the proportion of repetitions with its most common choice (Blend counts as a choice), averaged over the conflict items. 1 = the same choice every time.",
-	"TieConsist":  "Test only: Consist for the tied items (equal evidence for the two groups): 1 = the same choice every time, 0.5 = a coin flip.",
-	"AbsDiff":     "Mean across target probabilities of the absolute difference between the measured probability (P<target>) and the target.",
+	"Blend":         "1 if the two input groups are too close: SecondRatio is above BlendThr (and it is not an Intrusion), or there is no output activity.",
+	"Intrusion":     "1 if the activity of the groups that are not in the inputs is too high: OtherRatio is above IntrusionThr.",
+	"SecondRatio":   "On conflict trials: the summed (thresholded) output activity of the second input group, divided by that of the top input group (the one with more activity).",
+	"OtherRatio":    "The summed (thresholded) output activity of all the groups that are not in the inputs, divided by that of the top input group, capped at 1.",
+	"MatchCos":      "Cosine between the output activity and the closest output pattern.",
+	"Slot0":         "On tied conflict trials (two input groups with equal evidence) with a choice of one of them: 1 if it is the group in slot 0. 0.5 = no slot bias.",
+	"RepeatPrev":    "On tied conflict trials (two input groups with equal evidence) with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats the previous one. 0.5 = no carryover bias.",
+	"IntrusionPrev": "On Intrusion trials where the previous trial's choice is a group that is not in the inputs: 1 if the intrusion is that previous group. 1 / (NGroups - 2) = no relation to the previous trial (for 2 input groups).",
+	"Consist":       "Test only: the consistency of the choice for the same conflict item across its repetitions: the proportion of repetitions with its most common choice (Blend counts as a choice), averaged over the conflict items. 1 = the same choice every time.",
+	"TieConsist":    "Test only: Consist for the tied items (equal evidence for the two groups): 1 = the same choice every time, 0.5 = a coin flip.",
+	"SlotRange":     "Test only: the range (max - min) across slots of the Slot<n> stats: how much the choice on ties depends on which slots the groups are in. 0 = no slot bias.",
+	"AbsDiff":       "Mean across target probabilities of the absolute difference between the measured probability (P<target>) and the target.",
+	"InAbsDiff":     "AbsDiff for the input-only probabilities (In<target>): mean absolute difference from the targets, among only the choices of an input group.",
+}
+
+// SlotName returns the stat name for the choice on ties of the group
+// in the given slot, e.g., Slot2.
+func SlotName(slot int) string { return fmt.Sprintf("Slot%d", slot) }
+
+// SlotDoc returns the doc for the stat of a slot.
+func SlotDoc(slot int) string {
+	return fmt.Sprintf("On tied conflict trials (two input groups with equal evidence) with a choice of one of them: 1 if it is the group in slot %d. 0.5 = no bias for or against this slot.", slot)
+}
+
+// SlotNames returns the stat names for the slots after slot 0
+// (Slot0 is one of the fixed [TrialStatNames]).
+func (ev *CFEnv) SlotNames() []string {
+	var nms []string
+	for s := 1; s < ev.Configs.NSlots; s++ {
+		nms = append(nms, SlotName(s))
+	}
+	return nms
 }
 
 // TargetName returns the stat name for a target probability as a
 // rounded percent, e.g., P50.
 func TargetName(pct int) string { return fmt.Sprintf("P%d", pct) }
+
+// InTargetName returns the stat name for a target probability among
+// only the choices of an input group, e.g., In50.
+func InTargetName(pct int) string { return fmt.Sprintf("In%d", pct) }
+
+// InTargetDoc returns the doc for the input-only stat of a target probability.
+func InTargetDoc(pct int) string {
+	return fmt.Sprintf("Probability of choosing an input group whose expected probability is %d%%, among only the trials where the choice is one of the input groups: Blends and Intrusions are left out. Separates the shape of the choice curve from the rate of blends and intrusions.", pct)
+}
 
 // TargetDoc returns the doc for the stat of a target probability.
 func TargetDoc(pct int) string {
@@ -50,14 +81,34 @@ func (ev *CFEnv) TargetNames() []string {
 	return nms
 }
 
+// InTargetNames returns the input-only stat names for the target
+// probabilities in the test items (see [InTargetName]).
+func (ev *CFEnv) InTargetNames() []string {
+	var nms []string
+	for _, p := range ev.Space().Targets {
+		nms = append(nms, InTargetName(p))
+	}
+	return nms
+}
+
 // TrialStats has the stats for one trial.
 type TrialStats struct {
-	Blend, Intrusion, SecondRatio, OtherRatio, MatchCos, Slot0, RepeatPrev float64
+	Blend, Intrusion, SecondRatio, OtherRatio, MatchCos, Slot0, RepeatPrev, IntrusionPrev float64
 
 	// Probs are the per-trial probability stats for each target in
 	// [Space.Targets]: the mean over the input groups with that expected
 	// probability of whether that group was chosen (NaN if none).
 	Probs []float64
+
+	// InProbs are like Probs, but only for trials where the choice is one
+	// of the input groups (all NaN for a Blend or Intrusion), so their
+	// mean over trials is the probability among only those choices.
+	InProbs []float64
+
+	// Slots are the slot stats for each slot: on tied conflict trials
+	// with a choice of one of the input groups, 1 if the choice is the
+	// group in that slot (NaN otherwise). Slots[0] = Slot0.
+	Slots []float64
 
 	// GroupActs are the summed thresholded output activities of each group.
 	GroupActs []float32
@@ -69,7 +120,7 @@ type TrialStats struct {
 
 // Values returns the fixed stats in the order of [TrialStatNames].
 func (ts *TrialStats) Values() []float64 {
-	return []float64{ts.Blend, ts.Intrusion, ts.SecondRatio, ts.OtherRatio, ts.MatchCos, ts.Slot0, ts.RepeatPrev}
+	return []float64{ts.Blend, ts.Intrusion, ts.SecondRatio, ts.OtherRatio, ts.MatchCos, ts.Slot0, ts.RepeatPrev, ts.IntrusionPrev}
 }
 
 // Cosine returns the cosine between a and b (0 if either is all zeros).
@@ -173,6 +224,7 @@ func (ev *CFEnv) TrialStats(out []float32, ts *TrialStats) {
 	gi := it.GroupIndex(ts.Choice)
 	if len(ts.Probs) != len(sp.Targets) {
 		ts.Probs = make([]float64, len(sp.Targets))
+		ts.InProbs = make([]float64, len(sp.Targets))
 	}
 	for ti, tp := range sp.Targets {
 		sum, n := 0.0, 0
@@ -185,22 +237,42 @@ func (ev *CFEnv) TrialStats(out []float32, ts *TrialStats) {
 				sum++
 			}
 		}
-		ts.Probs[ti] = math.NaN()
+		ts.Probs[ti], ts.InProbs[ti] = math.NaN(), math.NaN()
 		if n > 0 {
 			ts.Probs[ti] = sum / float64(n)
+			if gi >= 0 {
+				ts.InProbs[ti] = ts.Probs[ti]
+			}
 		}
 	}
-	ts.Slot0, ts.RepeatPrev = math.NaN(), math.NaN()
-	if it.IsTie() && gi >= 0 {
-		ts.Slot0 = 0
-		if ts.Choice == cfg.Group(it.Inputs[0]) {
-			ts.Slot0 = 1
+	if len(ts.Slots) != cfg.NSlots {
+		ts.Slots = make([]float64, cfg.NSlots)
+	}
+	ts.RepeatPrev = math.NaN()
+	tie := it.IsTie() && gi >= 0
+	for s, in := range it.Inputs {
+		ts.Slots[s] = math.NaN()
+		if tie {
+			ts.Slots[s] = 0
+			if ts.Choice == cfg.Group(in) {
+				ts.Slots[s] = 1
+			}
 		}
+	}
+	ts.Slot0 = ts.Slots[0]
+	if tie {
 		if it.GroupIndex(ev.PrevChoice) >= 0 {
 			ts.RepeatPrev = 0
 			if ts.Choice == ev.PrevChoice {
 				ts.RepeatPrev = 1
 			}
+		}
+	}
+	ts.IntrusionPrev = math.NaN()
+	if ts.Intrusion == 1 && ev.PrevChoice >= 0 && it.GroupIndex(ev.PrevChoice) < 0 {
+		ts.IntrusionPrev = 0
+		if ts.Choice == ev.PrevChoice {
+			ts.IntrusionPrev = 1
 		}
 	}
 	ev.PrevChoice = ts.Choice

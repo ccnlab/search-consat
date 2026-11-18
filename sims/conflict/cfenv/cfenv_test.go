@@ -285,10 +285,18 @@ func TestStats(t *testing.T) {
 		}
 		// other group above the intrusion threshold
 		ev.TrialStats(mix(map[int]float32{a: 0.6, other: 0.6 * (cfg.IntrusionThr + 0.1)}), &ts)
-		if ts.Intrusion != 1 || ts.Choice != other {
+		if ts.Intrusion != 1 || ts.Choice != other || !math.IsNaN(ts.InProbs[0]) || !math.IsNaN(ts.InProbs[1]) {
 			t.Fatalf("intrusion: %s: %v", ev.String(), ts.Values())
 		}
+		// the same intrusion again repeats the previous (intruding) group
+		ev.TrialStats(mix(map[int]float32{a: 0.6, other: 0.6 * (cfg.IntrusionThr + 0.1)}), &ts)
+		if ts.IntrusionPrev != 1 {
+			t.Fatalf("intrusion prev: %s: %v", ev.String(), ts.Values())
+		}
 		ev.TrialStats(mix(map[int]float32{a: 0.9}), &ts) // reset PrevChoice to a
+		if !math.IsNaN(ts.IntrusionPrev) {
+			t.Fatalf("no intrusion: IntrusionPrev %g", ts.IntrusionPrev)
+		}
 		if it.NConflict == 0 {
 			if ts.Probs[0] != 1 || !math.IsNaN(ts.Probs[1]) || !math.IsNaN(ts.Slot0) || !math.IsNaN(ts.SecondRatio) {
 				t.Fatalf("consistent: %s: %v %v", ev.String(), ts.Values(), ts.Probs)
@@ -296,8 +304,13 @@ func TestStats(t *testing.T) {
 			continue
 		}
 		b := it.Groups[1]
-		if ts.Probs[1] != 0.5 || !math.IsNaN(ts.Probs[0]) || math.IsNaN(ts.Slot0) || ts.SecondRatio != 0 {
+		if ts.Probs[1] != 0.5 || !math.IsNaN(ts.Probs[0]) || math.IsNaN(ts.Slot0) || ts.SecondRatio != 0 || ts.InProbs[1] != 0.5 {
 			t.Fatalf("conflict: %s: %v %v", ev.String(), ts.Values(), ts.Probs)
+		}
+		for sl, in := range it.Inputs {
+			if want := float64(cfg.Group(in)); (want == float64(ts.Choice)) != (ts.Slots[sl] == 1) {
+				t.Fatalf("slot %d: %s: %v", sl, ev.String(), ts.Slots)
+			}
 		}
 		nslot0 += ts.Slot0
 		nconf++
@@ -308,7 +321,7 @@ func TestStats(t *testing.T) {
 		}
 		// below the blend ratio
 		ev.TrialStats(mix(map[int]float32{a: 0.7, b: 0.6}), &ts)
-		if ts.Blend != 1 || ts.Choice != -1 || ts.Probs[1] != 0 || !math.IsNaN(ts.RepeatPrev) {
+		if ts.Blend != 1 || ts.Choice != -1 || ts.Probs[1] != 0 || !math.IsNaN(ts.RepeatPrev) || !math.IsNaN(ts.InProbs[1]) {
 			t.Fatalf("blend: %s: %v %v", ev.String(), ts.Values(), ts.Probs)
 		}
 		// no activity above threshold

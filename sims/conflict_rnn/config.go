@@ -6,6 +6,7 @@ package conflictrnn
 
 import (
 	"cogentcore.org/core/core"
+	"github.com/emer/egomlx/egomlx"
 	"github.com/emer/emergent/v2/egui"
 )
 
@@ -24,6 +25,9 @@ type ParamConfig struct {
 	// NHidden is the number of hidden layers, in a stack between the
 	// Input and the Output, with Forward paths up and Back paths down.
 	NHidden int `default:"2" min:"1"`
+
+	// HiddenFn is the activation function of the hidden layers.
+	HiddenFn egomlx.ActFuns `default:"ReLU"`
 
 	// NCycles is the number of cycles of recurrent settling per trial,
 	// with the loss on the final cycle (backpropagation through time).

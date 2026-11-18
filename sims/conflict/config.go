@@ -37,6 +37,16 @@ type ParamConfig struct {
 	// OutputLateral adds full lateral (self) connections within the Output layer.
 	OutputLateral bool
 
+	// Shortcut adds shortcut connections from Encoder to output
+	Shortcut bool
+
+	// TestSynFail resamples the random synaptic failures (Com.PFail) after each
+	// testing trial, without any learning or slow adaptation (Network.SynFail),
+	// so that testing has new failures on each trial, as training does.
+	// Otherwise the failures from the last training trial stay fixed
+	// throughout testing. Turn this on if Com.PFail > 0.
+	TestSynFail bool
+
 	// Script is an interpreted script that is run to set parameters in Layer and Path
 	// sheets, by default using the "Script" set name.
 	Script string `new-window:"+" width:"100"`

@@ -523,7 +523,7 @@ func (ss *Sim) ConfigStats() {
 	ss.AddStat(ss.StatSecondHist(10))
 
 	// get test stats in train log
-	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "Consist", "TieConsist"}, ss.targetNames()...)...))
+	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev", "Consist", "TieConsist", "InAbsDiff", "SlotRange"}, append(append(ss.targetNames(), ss.inTargetNames()...), ss.slotNames()...)...)...))
 
 	lays := net.LayersByType(egomlx.Hidden, egomlx.Target)
 	ss.AddStatStd(egomlx.StatLayerAct(ss.Stats, net, Train, Trial, Run, lays...))
@@ -639,4 +639,5 @@ func (ss *Sim) RunNoGUI() {
 	ss.Loops.Run(Train)
 
 	egomlx.CloseLogFiles(ss.Loops, ss.Stats, Cycle)
+	mpi.Printf("%s", ss.Net.TimerReport())
 }

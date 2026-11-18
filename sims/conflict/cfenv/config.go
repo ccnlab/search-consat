@@ -15,14 +15,17 @@ import (
 type Config struct {
 
 	// NSlots is the number of input slots (k).
-	NSlots int
+	// 6 is the best for testing graded dynamics.
+	NSlots int `default:"6"`
 
 	// NGroups is the number of groups (G), each with its own output pattern.
-	NGroups int
+	// 5 with bar outputs results in sparse 20% activity, which is important for axon.
+	NGroups int `default:"5"`
 
 	// GroupN is the number of input patterns in each group (g),
 	// all of which map to the group's output pattern.
-	GroupN int
+	// Not particularly theory-relevant: just enough to have some variety.
+	GroupN int `default:"4"`
 
 	// Freqs are the relative frequencies of the GroupN input patterns
 	// within each group, used for sampling the training inputs and
@@ -94,7 +97,7 @@ type Config struct {
 }
 
 func (cfg *Config) Defaults() {
-	cfg.NSlots = 4
+	cfg.NSlots = 6
 	cfg.NGroups = 5
 	cfg.GroupN = 4
 	cfg.PoolSize = 7

@@ -250,8 +250,8 @@ func (ss *Sim) ConfigNet(net *egomlx.Network) {
 }
 
 // ApplyParams applies the network parameters, including any script,
-// and then the NCycles, Decay, WeightDecay, and hidden layer Noise and
-// Dropout from the config,
+// and then the NCycles, Decay, WeightDecay, and hidden layer activation
+// function, Noise, and Dropout from the config,
 // rebuilding the network graph for them.
 func (ss *Sim) ApplyParams() {
 	ss.Params.Script = ss.Config.Params.Script
@@ -265,6 +265,7 @@ func (ss *Sim) ApplyParams() {
 	}
 	for _, ly := range ss.Net.Layers {
 		if ly.Type == egomlx.Hidden {
+			ly.Params.Act.Fn = pc.HiddenFn
 			ly.Params.Act.Noise = pc.Noise
 			ly.Params.Act.Dropout = pc.Dropout
 		}
@@ -543,7 +544,7 @@ func (ss *Sim) ConfigStats() {
 	ss.AddStat(ss.StatSecondHist(10))
 
 	// get test stats in train log
-	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "Consist", "TieConsist"}, ss.targetNames()...)...))
+	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev", "Consist", "TieConsist", "InAbsDiff", "SlotRange"}, append(append(ss.targetNames(), ss.inTargetNames()...), ss.slotNames()...)...)...))
 
 	lays := net.LayersByType(egomlx.Hidden, egomlx.Target)
 	ss.AddStatStd(egomlx.StatLayerAct(ss.Stats, net, Train, Trial, Run, lays...))
@@ -659,4 +660,5 @@ func (ss *Sim) RunNoGUI() {
 	ss.Loops.Run(Train)
 
 	egomlx.CloseLogFiles(ss.Loops, ss.Stats, Cycle)
+	mpi.Printf("%s", ss.Net.TimerReport())
 }

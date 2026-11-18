@@ -134,6 +134,40 @@ func TestTestCopy(t *testing.T) {
 	if run.Len() != 1 || math.IsNaN(run.Values[0]) {
 		t.Errorf("Test_P100 not copied to Train Run: %v", run.Values)
 	}
+	for _, nm := range []string{"Test_In100", "Test_InAbsDiff"} {
+		v := ss.Stats.Dir("Train/Run").Float64(nm)
+		if v.Len() != 1 || math.IsNaN(v.Values[0]) {
+			t.Errorf("%s not copied to Train Run: %v", nm, v.Values)
+		}
+	}
+	in100 := ss.Stats.Dir("Test/Epoch").Float64("In100").Float1D(-1)
+	p100 := ss.Stats.Dir("Test/Epoch").Float64("P100").Float1D(-1)
+	if in100 < p100 {
+		t.Errorf("In100 %g < P100 %g: leaving out blends and intrusions cannot lower it", in100, p100)
+	}
+	// the slot stats for each slot are logged, and SlotRange is copied
+	nslots := ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).Configs.NSlots
+	for sl := range nslots {
+		if ss.Stats.Dir("Test/Epoch").Float64(cfenv.SlotName(sl)).Len() == 0 {
+			t.Errorf("no %s stat", cfenv.SlotName(sl))
+		}
+	}
+	if v := ss.Stats.Dir("Train/Run").Float64("Test_SlotRange"); v.Len() != 1 || math.IsNaN(v.Values[0]) {
+		t.Errorf("Test_SlotRange not copied to Train Run: %v", v.Values)
+	}
+	// silent layer and test activity stats, and their copies
+	te := ss.Stats.Dir("Test/Epoch")
+	for _, nm := range []string{"Hidden1_Silent", "Output_Silent", "Encoder_Silent", "Hidden1_ActMAvg", "Hidden1_ActMMax", "Hidden1_MaxGeM"} {
+		v := te.Float64(nm).Float1D(-1)
+		cp := ss.Stats.Dir("Train/Run").Float64("Test_" + nm)
+		t.Logf("Test %s = %.3f", nm, v)
+		if math.IsNaN(v) || v < 0 || cp.Len() != 1 || cp.Values[0] != v {
+			t.Errorf("%s: %g, Train Run copy %v", nm, v, cp.Values)
+		}
+	}
+	if te.Float64("Hidden1_MaxGeM").Float1D(-1) <= 0 {
+		t.Errorf("Hidden1_MaxGeM is 0 in testing")
+	}
 	dm := ss.Stats.Dir("Patterns").Float64("DistMatrix")
 	ni := ss.Envs.ByModeDi(Train, 0).(*cfenv.CFEnv).Configs.NInputs()
 	if !slices.Equal(dm.ShapeSizes(), []int{ni, ni}) || dm.Float(0, 0) > 1e-6 || dm.Float(0, ni-1) < 0.5 {
@@ -150,5 +184,94 @@ func TestTestCopy(t *testing.T) {
 	t.Logf("Test SecondRatio hist: %v", props)
 	if len(props) != 10 || math.Abs(sum-1) > 1e-6 {
 		t.Errorf("histogram proportions sum to %g", sum)
+	}
+}
+
+// synState returns copies of the LWt and SWt values of all synapses,
+// and the mask of failed (zero) weights, syncing from the GPU if used.
+func synState(nsyn int) (lwt, swt []float32, fail []bool) {
+	if axon.UseGPU {
+		axon.RunOneSynFailSyn(nsyn, axon.SynapsesVar) // one more resample, and sync
+	}
+	lwt, swt, fail = make([]float32, nsyn), make([]float32, nsyn), make([]bool, nsyn)
+	for i := range nsyn {
+		lwt[i] = axon.Synapses.Value2D(i, int(axon.LWt))
+		swt[i] = axon.Synapses.Value2D(i, int(axon.SWt))
+		fail[i] = axon.Synapses.Value2D(i, int(axon.Wt)) == 0
+	}
+	return
+}
+
+// TestSynFail checks that testing with TestSynFail resamples the synaptic
+// failures without any learning or slow adaptation: the learned weights,
+// the layer inhibition multipliers and the slow counters are unchanged by a
+// full test, and repeated resampling gives new failures at the expected rate.
+func TestSynFail(t *testing.T) {
+	// add PFail to the Base sheet (applied for both Train and Test),
+	// independent of the current params.
+	base := PathParams["Base"]
+	orig := *base
+	*base = append(*base, &axon.PathSel{Sel: "Path", Doc: "TestSynFail",
+		Set: func(pt *axon.PathParams) {
+			pt.Com.PFail = 0.02
+			pt.Com.PFailSWt.SetBool(true)
+		}})
+	defer func() { *base = orig }()
+	for _, gpu := range []bool{false, true} {
+		cfg, _ := egui.NewConfig[Config]()
+		cfg.GPU = gpu
+		cfg.GUI = false
+		cfg.Run.NData = 4
+		cfg.Run.Trials = 64
+		cfg.Params.TestSynFail = true
+		cfg.Env.Env = map[string]any{"TestPerLevel": 8, "TestReps": 4}
+		ss := &Sim{}
+		ss.SetConfig(cfg)
+		ss.ConfigSim()
+		ss.Init()
+		ss.Loops.Step(Train, 2, Epoch)
+		nsyn := int(ss.Net.NetIxs().NSyns)
+		ctx := ss.Net.Context()
+		slow, adapt := ctx.SlowCounter, ctx.AdaptGiCounter
+		var gis []float32
+		for li := range ss.Net.Layers {
+			gis = append(gis, axon.LayerStates.Value(li, 0, int(axon.LayerGiMult)))
+		}
+		lwt0, swt0, fail0 := synState(nsyn)
+		ss.TestAll()
+		lwt1, swt1, fail1 := synState(nsyn)
+		if !slices.Equal(lwt0, lwt1) || !slices.Equal(swt0, swt1) {
+			t.Errorf("GPU %v: learned weights changed by testing", gpu)
+		}
+		if ctx.SlowCounter != slow || ctx.AdaptGiCounter != adapt {
+			t.Errorf("GPU %v: slow counters changed by testing: %d %d -> %d %d", gpu, slow, adapt, ctx.SlowCounter, ctx.AdaptGiCounter)
+		}
+		for li := range ss.Net.Layers {
+			if g := axon.LayerStates.Value(li, 0, int(axon.LayerGiMult)); g != gis[li] {
+				t.Errorf("GPU %v: layer %d GiMult changed by testing: %g -> %g", gpu, li, gis[li], g)
+			}
+		}
+		// expected proportion of failures: PFail * (1 - SWt) for PFailSWt
+		var expect float64
+		nfail, ndiff := 0, 0
+		for i := range nsyn {
+			pti := axon.SynapseIxs.Value2D(i, int(axon.SynPathIndex))
+			expect += float64(ss.Net.Paths[pti].Params.Com.WtFailP(swt1[i]))
+			if fail1[i] {
+				nfail++
+			}
+			if fail0[i] != fail1[i] {
+				ndiff++
+			}
+		}
+		expect /= float64(nsyn)
+		got := float64(nfail) / float64(nsyn)
+		t.Logf("GPU %v: %d synapses, failed %.4f (expected %.4f), changed between samples %.4f", gpu, nsyn, got, expect, float64(ndiff)/float64(nsyn))
+		if expect == 0 || math.Abs(got-expect) > 0.2*expect || ndiff == 0 {
+			t.Errorf("GPU %v: failures %.4f, expected %.4f, changed %d", gpu, got, expect, ndiff)
+		}
+		if gpu {
+			axon.GPURelease()
+		}
 	}
 }

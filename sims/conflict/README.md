@@ -72,21 +72,30 @@ The network is a model of cortex, which only needs to show a reasonable amount o
 |---|---|
 | `P100`, `P50`, ... | Probability of choosing an input group whose expected probability is 100%, 50%, ... Blends and intrusions count as not choosing it. |
 | `AbsDiff` | Mean across the target probabilities of \|measured − target\| |
+| `In100`, `In50`, ... | Like `P100`, ... but among only the trials where the choice is one of the input groups: blends and intrusions are left out. The shape of the choice curve, apart from the rate of blends and intrusions |
+| `InAbsDiff` | `AbsDiff` for the `In` stats |
 | `Blend` | Proportion of trials that are blends |
 | `Intrusion` | Proportion of trials that are intrusions |
 | `SecondRatio` | Second / Top activity, on conflict trials: 0 = only Top, 1 = equal. A blend is above `BlendThr` (0.75) |
 | `OtherRatio` | Other / Top activity, capped at 1. An intrusion is above `IntrusionThr` (0.75) |
 | `MatchCos` | Cosine between the output and the closest output pattern, as a raw diagnostic |
 | `Slot0` | On tied conflict trials (two input groups with equal evidence, e.g., 2:2 for k = 4) with a choice of one of them: 1 if it is the group in slot 0. 0.5 = no slot bias |
+| `Slot1`, `Slot2`, ... | The same as `Slot0`, for the group in each of the other slots |
+| `SlotRange` | Test only: the range (max − min) of the slot stats across slots: how much the choice on ties depends on which slots the groups are in |
 | `RepeatPrev` | On tied conflict trials with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats it. 0.5 = no carryover bias |
+| `IntrusionPrev` | On intrusion trials where the previous trial's choice is a group that is not in the inputs: 1 if the intrusion is that previous group. 1 / (G − 2) = 0.33 (for G = 5) = no relation to the previous trial |
+| `<Layer>_Silent` | For the Encoder, Hidden and Output layers: 1 if no unit has activity above `ActThr` on the trial. A failure to propagate activity: a silent Output is scored as a `Blend`, so these separate the silent trials from real blends of two active groups |
 | `Consist` | Test only: the consistency of the choice for the same conflict item across its `TestReps` repetitions: the proportion of repetitions with its most common choice (a blend counts as a choice), averaged over the conflict items. 1 = the same choice every time |
 | `TieConsist` | `Consist` for the tied items: 1 = the same choice every time, about 0.59 = a coin flip (for 20 repetitions) |
 
 - The ratios are relative to Top (from 0 to 1), so they average cleanly, and a missing Second or Other gives 0 instead of an infinite ratio.
 - The probability stats are computed per trial (the mean over the input groups with that target of whether each was chosen, NaN if none), and averaged over trials.
+- The `In` stats are the same per-trial values, with NaN on blend and intrusion trials, so their mean is the probability conditional on choosing an input group. For example, a P67 of 0.57 and P33 of 0.13 with many intrusions is a 0.81 to 0.19 split between the two input groups, which the `In` stats show directly. Because each test item has inputs from only two groups, the two `In` values of an item add up to 1 (e.g., `In67` + `In33` = 1), and `In50` (the ties) is always 0.5. They are shown in the Test epoch plot, and off by default in the Train plots.
 - For k = 2, `P50` combines both groups on conflict trials, so it is (1 − `Blend` − `Intrusion`) / 2 on those trials. The symmetry between the two groups is measured by `Slot0`.
 - The probability stats do not distinguish between stochastic choices and fixed preferences for specific items: e.g., a P67 of 0.87 could be 13% of the items always going to the minority group. `Consist` and `TieConsist` measure this, from the choices for the same item across the repetitions in a test.
 - `Slot0` and `RepeatPrev` only use tied trials, because on trials with unequal evidence (e.g., 3:1 for k = 4), the choice is driven by the evidence: under majority rule, the slot 0 input is in the chosen (majority) group 3/4 of the time, and whether the choice repeats the previous one depends on which group won last time. For k = 2, all conflict trials are ties.
+- The slot stats always average to 0.5 across slots, because on a tie half of the slots hold the chosen group. A slot bias comes from the slots having different weights into the hidden layer (each slot has its own Encoder pool), which depends on the random initial weights, so which slots are favored differs across runs. Even with no real bias, `SlotRange` is not 0: with 200 tied items whose choices are fixed by the item, sampling alone gives a standard error of about 0.035 for each slot stat, and a range of about 0.1 across 6 slots (the conflict_rnn without carryover has `SlotRange` 0.08–0.14). Run 0 always has the same initial weights, so single-run experiments all share the same slot bias.
+- Testing also has the layer activity stats of training (`<Layer>_ActMAvg`, `_ActMMax` and `_MaxGeM`), averaged over the test trials, which are copied into the Train log as `Test_<Layer>_...` for comparison with the training values. They show whether activity propagates as well on the conflict items as on the trained ones.
 - `Stats/Test/SecondRatioHist` (the `Test SecondRatioHist` bar plot tab) has the distribution of `SecondRatio` across the conflict trials in testing, in 10 bins from 0 to 1, as the proportion of trials in each bin. The counts are accumulated over all the tests from training epoch `Epochs` / 2 on (including the final test), in each run. Before that, it shows the last test. This distinguishes a mix of clear choices (near 0) and blends (near 1) from a consistent partial preference.
 - The Train Epoch and Run logs have the latest test values as `Test_<stat>`: each epoch has the values from the latest test in the run (NaN before the first one), so they plot as a step line. The Run value is from the final test.
 
@@ -108,5 +117,5 @@ With `NSlots` = 6 and output laterals, the choice is a graded function of the ev
 | 0 | 1.0 | 0.90 | 0.30 | 0.009 | 0.10 | 0.91 | 0.78 | 0.44 |
 
 - The results are the same without noise, so the variability across repetitions comes from the activity carried over from the previous trial, not from noise: on ties, the choice repeats the previous trial's choice about 90% of the time.
-- `TieConsist` is below the 0.59 of a coin flip between the two groups because there are more than two outcomes: intrusions (mostly the previous trial's group) are about 10% of the trials.
+- `TieConsist` is below the 0.59 of a coin flip between the two groups because there are more than two outcomes: intrusions are about 10% of the trials (`IntrusionPrev` measures how many of them are the previous trial's group).
 - The backprop baselines are deterministic without carryover ([conflict_ff](../conflict_ff/README.md), and [conflict_rnn](../conflict_rnn/README.md) with `Decay` = 1). With carryover (`Decay` < 1), conflict_rnn also breaks ties by the previous trial, but without intrusions.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"cogentcore.org/core/base/metadata"
 	"cogentcore.org/core/core"
@@ -35,12 +36,27 @@ func (ss *Sim) targetNames() []string {
 	return ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).TargetNames()
 }
 
+// inTargetNames returns the input-only probability stat names for the
+// test targets (In100, In50, ...).
+func (ss *Sim) inTargetNames() []string {
+	return ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).InTargetNames()
+}
+
+// slotNames returns the slot stat names after Slot0 (Slot1, ...).
+func (ss *Sim) slotNames() []string {
+	return ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).SlotNames()
+}
+
 // StatOutput returns the stats function for the output of the network,
 // computed by [cfenv.CFEnv.TrialStats] from the Output minus phase
 // activity (Act), matched against the group output patterns
 // (see [cfenv.TrialStatDocs]). The probability stats (P100, P50, ...)
 // are averaged over trials, and AbsDiff is computed from them above the
-// Trial level.
+// Trial level. The input-only probability stats (In100, In50, ...) and
+// InAbsDiff are the same, among only the trials where the choice is one
+// of the input groups (leaving out Blends and Intrusions). The slot
+// stats (Slot0, Slot1, ...) are for the choice on ties of the group in
+// each slot, and SlotRange is their range above the Trial level.
 func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 	var outVals []float32
 	var ts cfenv.TrialStats
@@ -48,6 +64,12 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 	targs := ss.targetNames()
 	names := append(append([]string{}, fixed...), targs...)
 	names = append(names, "AbsDiff")
+	inTargs := ss.inTargetNames()
+	names = append(names, inTargs...)
+	names = append(names, "InAbsDiff")
+	slotNms := append([]string{"Slot0"}, ss.slotNames()...)
+	names = append(names, slotNms[1:]...)
+	names = append(names, "SlotRange")
 	pcts := make([]float64, len(targs))
 	for i, nm := range targs {
 		p, _ := strconv.Atoi(nm[1:])
@@ -75,7 +97,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 					case "P100", "AbsDiff", "Blend", "Intrusion":
 						s.On = true
 					}
-					if mode == Test && name[0] == 'P' {
+					if mode == Test && (name[0] == 'P' || strings.HasPrefix(name, "In")) {
 						s.On = true
 					}
 				})
@@ -84,6 +106,12 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				} else if name[0] == 'P' {
 					p, _ := strconv.Atoi(name[1:])
 					metadata.SetDoc(tsr, cfenv.TargetDoc(p))
+				} else if strings.HasPrefix(name, "In") {
+					p, _ := strconv.Atoi(name[2:])
+					metadata.SetDoc(tsr, cfenv.InTargetDoc(p))
+				} else if strings.HasPrefix(name, "Slot") {
+					sl, _ := strconv.Atoi(name[4:])
+					metadata.SetDoc(tsr, cfenv.SlotDoc(sl))
 				}
 			}
 			return
@@ -99,6 +127,10 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				ev.TrialStats(outVals, &ts)
 				vals := append(ts.Values(), ts.Probs...)
 				vals = append(vals, math.NaN())
+				vals = append(vals, ts.InProbs...)
+				vals = append(vals, math.NaN())
+				vals = append(vals, ts.Slots[1:]...)
+				vals = append(vals, math.NaN())
 				for i, stat := range vals {
 					name := names[i]
 					curModeDir.Float64(name, ndata).SetFloat1D(stat, di)
@@ -111,7 +143,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				sf = stats.StatFinal
 			}
 			for _, name := range names {
-				if name == "AbsDiff" && level != Run {
+				if (name == "AbsDiff" || name == "InAbsDiff" || name == "SlotRange") && level != Run {
 					continue
 				}
 				levelDir.Float64(name).AppendRowFloat(sf.Call(subDir.Value(name)).Float1D(0))
@@ -119,21 +151,35 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 			if level == Run {
 				return
 			}
-			ad, n := 0.0, 0
-			for i, nm := range targs {
-				p := levelDir.Float64(nm).Float1D(-1)
-				if math.IsNaN(p) {
-					continue
+			absDiff := func(nms []string) float64 {
+				ad, n := 0.0, 0
+				for i, nm := range nms {
+					p := levelDir.Float64(nm).Float1D(-1)
+					if math.IsNaN(p) {
+						continue
+					}
+					ad += math.Abs(p - pcts[i])
+					n++
 				}
-				ad += math.Abs(p - pcts[i])
-				n++
+				if n == 0 {
+					return math.NaN()
+				}
+				return ad / float64(n)
 			}
-			if n > 0 {
-				ad /= float64(n)
-			} else {
-				ad = math.NaN()
+			levelDir.Float64("AbsDiff").AppendRowFloat(absDiff(targs))
+			levelDir.Float64("InAbsDiff").AppendRowFloat(absDiff(inTargs))
+			mn, mx := math.Inf(1), math.Inf(-1)
+			for _, nm := range slotNms {
+				v := levelDir.Float64(nm).Float1D(-1)
+				if !math.IsNaN(v) {
+					mn, mx = min(mn, v), max(mx, v)
+				}
 			}
-			levelDir.Float64("AbsDiff").AppendRowFloat(ad)
+			rng := math.NaN()
+			if mx >= mn {
+				rng = mx - mn
+			}
+			levelDir.Float64("SlotRange").AppendRowFloat(rng)
 		}
 	}
 }

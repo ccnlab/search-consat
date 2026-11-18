@@ -19,6 +19,7 @@ Input    [1, k, 7, 7]
 - Forward paths go up the stack, and Back paths come down it (except to the Input). `Lateral` adds lateral connections within each hidden layer, and `OutputLateral` within the Output.
 - The network settles for `NCycles` (default 10) cycles, using egomlx recurrent settling: on each cycle, Forward paths use the sender's current-cycle activity, and Back and Lateral paths its previous-cycle activity (zero on the first cycle). The weights are shared across cycles, and the loss is on the final cycle, so learning is backpropagation through time.
 - `Noise` (default 0.2) is the standard deviation of Gaussian noise added to the net input of the hidden layers on every cycle, in training and testing. With the default `Decay` of 1, it is the only source of variability across repetitions of the same item: each trial starts from zero activity, with no carryover between trials.
+- `HiddenFn` (default ReLU) is the activation function of the hidden layers.
 - `Decay` (default 1) is the proportion of the previous trial's final activity that decays before the next trial: the first cycle starts from (1 − `Decay`) times that activity, so the previous trial carries over through the recurrent paths, as in the axon model. 1 = each trial starts from zero. Gradients do not flow back into the previous trial.
 - Loss and optimizer: BCE loss, Adam with LR 0.001. Weights: Glorot init, with biases.
 
@@ -98,3 +99,59 @@ k = 6, 1 run each, 30 epochs, `Noise` 0.2 unless noted. `WeightDecay` > 0 uses t
 - Dropout makes the choices even cleaner (`SecondRatio` 0.001–0.002), without making them more variable: dropout is only in training, so testing is as deterministic as before (apart from the noise).
 - With carryover (`Decay` 0.5), dropout gives the same history-dependent tie breaking as carryover alone.
 - WeightDecay 0.1 with `Decay` 0.5 was unstable: the hidden ReLU activity grew over training (mean about 3), and blew up at epoch 21 (NaN loss, then no activity). ReLU activity is unbounded, and carryover can feed it back across trials.
+
+### Tanh and longer settling
+
+The most graded settings (full carryover: `Decay` 0, `Noise` 0), with ReLU or tanh hidden layers (`HiddenFn`), and 10 or 20 cycles of settling. k = 6, 1 run each, 30 epochs:
+
+| | P67 | P33 | SecondRatio | RepeatPrev | Consist | TieConsist |
+|---|---|---|---|---|---|---|
+| ReLU, 10 cycles | 0.92 | 0.076 | 0.029 | 0.93 | 0.90 | 0.77 |
+| Tanh, 10 cycles | 0.93 | 0.068 | 0.007 | 0.92 | 0.89 | 0.72 |
+| ReLU, 20 cycles | 0.93 | 0.060 | 0.019 | 0.73 | 0.94 | 0.88 |
+| Tanh, 20 cycles | 0.85 | 0.116 | 0.027 | 0.68 | 0.96 | 0.93 |
+| axon (output laterals) | 0.87 | 0.014 | 0.12 | 0.90 | 0.77 | 0.43 |
+
+- Tanh is about the same as ReLU with 10 cycles, with slightly cleaner and slightly more variable choices on ties. Its activity is bounded, unlike ReLU, which blew up with weight decay and carryover.
+- With 20 cycles, the carryover has less effect (`RepeatPrev` 0.68–0.73), and the choices are more determined by the item (`TieConsist` 0.88–0.93): the previous trial only enters through the first cycle, so with longer settling, the current inputs dominate more.
+- Tanh with 20 cycles has a P67 (0.85) like the axon model's, but a much higher P33 (0.116 vs 0.014): the curve is flatter, not steeper, and the minority choices are specific items (`Consist` 0.96). The axon model combines a steep curve (P33 near 0) with choices that vary across repetitions, which none of these settings do.
+
+The runs above have no lateral connections. With `OutputLateral` (tanh, `Decay` 0, `Noise` 0):
+
+| | P67 | P33 | SecondRatio | RepeatPrev | Consist | TieConsist |
+|---|---|---|---|---|---|---|
+| 10 cycles | 0.93 | 0.068 | 0.007 | 0.92 | 0.89 | 0.72 |
+| 10 cycles, output laterals | 0.94 | 0.064 | 0.037 | 0.69 | 0.96 | 0.91 |
+| 20 cycles | 0.85 | 0.116 | 0.027 | 0.68 | 0.96 | 0.93 |
+| 20 cycles, output laterals | 0.87 | 0.118 | 0.004 | 0.95 | 0.88 | 0.77 |
+
+With 5 runs per condition (mean ± standard deviation across runs):
+
+| | P67 | P33 | RepeatPrev | Consist | TieConsist |
+|---|---|---|---|---|---|
+| 10 cycles | 0.96 ± 0.02 | 0.037 ± 0.02 | 0.91 ± 0.03 | 0.92 | 0.80 ± 0.04 |
+| 10 cycles, output laterals | 0.96 ± 0.02 | 0.035 ± 0.02 | 0.79 ± 0.07 | 0.95 | 0.88 ± 0.03 |
+| 20 cycles | 0.96 ± 0.05 | 0.036 ± 0.04 | 0.61 ± 0.04 | 0.99 | 0.97 ± 0.02 |
+| 20 cycles, output laterals | 0.84 ± 0.05 | 0.10 ± 0.02 | 0.93 ± 0.04 | 0.86 | 0.73 ± 0.03 |
+
+- The differences between the conditions are consistent across runs.
+- Without laterals, 20 cycles of settling washes out the carryover (`RepeatPrev` 0.61 in every run), and the choices are almost completely determined by the item (0.97).
+- With output laterals, the carryover persists through 20 cycles (`RepeatPrev` 0.93): the laterals keep the previous trial's winner active in the output as an attractor, instead of letting it fade. This is also the condition with the flattest choice curve (P67 0.84, P33 0.10).
+- The single-run P67 of 0.85 for tanh with 20 cycles in the previous table was an outlier: the mean over 5 runs is 0.96.
+- None of the conditions has the axon model's combination of a steep curve (P33 about 0.01) with highly variable choices (`TieConsist` about 0.43).
+
+### Network size
+
+The most graded settings above (tanh, 20 cycles, output laterals, `Decay` 0, `Noise` 0), with `HiddenSize` 15 (15×15 = 225 units per hidden layer) and 21 (441 units, about twice as many). k = 6, 5 runs each, 30 epochs (mean ± standard deviation across runs):
+
+| HiddenSize | P67 | P50 | P33 | P17 | RepeatPrev | Consist | TieConsist | Blend |
+|---|---|---|---|---|---|---|---|---|
+| 15 | 0.84 ± 0.06 | 0.46 | 0.10 ± 0.03 | 0.019 | 0.93 ± 0.05 | 0.86 | 0.73 ± 0.03 | 0.001 |
+| 21 | 0.92 ± 0.10 | 0.44 | 0.06 ± 0.07 | 0.005 | 0.76 ± 0.12 | 0.93 | 0.85 ± 0.10 | 0.014 |
+
+- The larger network is closer to a strict majority rule (higher P67, lower P33). It is less affected by the carryover (`RepeatPrev` 0.76), and its choices on ties are more determined by the item (`TieConsist` 0.85).
+- It varies much more across runs:
+  - Three of the five runs are nearly a strict majority rule (P67 about 0.98, P33 about 0.01).
+  - One run is like the smaller network (P67 0.77, P33 0.17, `RepeatPrev` 0.88).
+  - In the most extreme run (`RepeatPrev` 0.58, `TieConsist` 0.99), P50 is only 0.32, with 4% blends: on ties, it often does not cleanly produce either input group.
+- So the graded, history-dependent choices of the smaller network partly reflect its limited capacity. With more units, the network separates the evidence more sharply, which overrides the carryover held in the output attractor. Scale trades the graded curve for more deterministic choices, which is the opposite of the axon model's combination of a steep curve with variable choices.

@@ -26,7 +26,7 @@ var NetworkParams = egomlx.NetworkSheets{
 // Base is always applied, and others can be optionally selected to apply on top of that.
 var LayerParams = egomlx.LayerSheets{
 	"Base": {
-		{Sel: ".Hidden", Doc: "hidden layers use ReLU activation (Noise is set from the config in ApplyParams)",
+		{Sel: ".Hidden", Doc: "hidden layers use ReLU activation (overridden by HiddenFn, and Noise is set, from the config in ApplyParams)",
 			Set: func(ly *egomlx.LayerParams) {
 				ly.Act.Fn = egomlx.ReLU
 			}},

@@ -225,6 +225,9 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	if pc.OutputLateral {
 		net.LateralConnectLayer(out, full)
 	}
+	if pc.Shortcut {
+		net.ConnectLayers(enc, out, full, axon.ForwardPath).AddClass("Shortcut")
+	}
 
 	net.Build()
 	net.Defaults()
@@ -324,6 +327,10 @@ func (ss *Sim) ConfigLoops() {
 		ctrString := fmt.Sprintf("%03d_%05d", ls.Loop(Train, Run).Counter.Cur, ls.Loop(Train, Epoch).Counter.Cur)
 		axon.SaveWeightsIfConfigSet(ss.Net, ss.Config.Log.SaveWeights, ctrString, ss.RunName())
 	})
+
+	if ss.Config.Params.TestSynFail {
+		ls.Loop(Test, Trial).OnEnd.Add("SynFail", ss.Net.SynFail)
+	}
 
 	if ss.Config.GUI {
 		axon.LooperUpdateNetView(ls, Cycle, Trial, ss.NetViewUpdater)
@@ -520,14 +527,17 @@ func (ss *Sim) ConfigStats() {
 
 	ss.AddStat(ss.StatOutput())
 	ss.AddStat(ss.StatConsist())
+	ss.AddStat(ss.StatSilent())
 	ss.PatternDistMatrix()
 	ss.AddStat(ss.StatSecondHist(10))
 
 	// get test stats in train log
-	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "Consist", "TieConsist"}, ss.targetNames()...)...))
+	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev", "Consist", "TieConsist", "InAbsDiff", "SlotRange"}, append(append(append(ss.targetNames(), ss.inTargetNames()...), ss.slotNames()...), ss.silentNames()...)...)...))
 
 	lays := net.LayersByType(axon.SuperLayer, axon.CTLayer, axon.InputLayer, axon.TargetLayer)
 	ss.AddStatStd(axon.StatLayerActGe(ss.Stats, net, Train, Trial, Run, lays...))
+	ss.AddStat(ss.StatTestActGe(lays...))
+	ss.AddStat(ss.StatTestCopy(actGeNames(lays)...))
 	ss.AddStatStd(axon.StatLayerGiMult(ss.Stats, net, Train, Epoch, Run, lays...))
 
 	superLays := net.LayersByType(axon.SuperLayer, axon.CTLayer)

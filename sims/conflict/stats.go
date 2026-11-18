@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"cogentcore.org/core/base/metadata"
 	"cogentcore.org/core/core"
@@ -39,12 +40,27 @@ func (ss *Sim) targetNames() []string {
 	return ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).TargetNames()
 }
 
+// inTargetNames returns the input-only probability stat names for the
+// test targets (In100, In50, ...).
+func (ss *Sim) inTargetNames() []string {
+	return ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).InTargetNames()
+}
+
+// slotNames returns the slot stat names after Slot0 (Slot1, ...).
+func (ss *Sim) slotNames() []string {
+	return ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).SlotNames()
+}
+
 // StatOutput returns the stats function for the output of the network,
 // computed by [cfenv.CFEnv.TrialStats] from the Output minus phase
 // activity (ActM), matched against the group output patterns
 // (see [cfenv.TrialStatDocs]). The probability stats (P100, P50, ...)
 // are averaged over trials, and AbsDiff is computed from them above the
-// Trial level.
+// Trial level. The input-only probability stats (In100, In50, ...) and
+// InAbsDiff are the same, among only the trials where the choice is one
+// of the input groups (leaving out Blends and Intrusions). The slot
+// stats (Slot0, Slot1, ...) are for the choice on ties of the group in
+// each slot, and SlotRange is their range above the Trial level.
 func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 	var outVals []float32
 	var ts cfenv.TrialStats
@@ -52,6 +68,12 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 	targs := ss.targetNames()
 	names := append(append([]string{}, fixed...), targs...)
 	names = append(names, "AbsDiff")
+	inTargs := ss.inTargetNames()
+	names = append(names, inTargs...)
+	names = append(names, "InAbsDiff")
+	slotNms := append([]string{"Slot0"}, ss.slotNames()...)
+	names = append(names, slotNms[1:]...)
+	names = append(names, "SlotRange")
 	pcts := make([]float64, len(targs))
 	for i, nm := range targs {
 		p, _ := strconv.Atoi(nm[1:])
@@ -79,7 +101,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 					case "P100", "AbsDiff", "Blend", "Intrusion":
 						s.On = true
 					}
-					if mode == Test && name[0] == 'P' {
+					if mode == Test && (name[0] == 'P' || strings.HasPrefix(name, "In")) {
 						s.On = true
 					}
 				})
@@ -88,6 +110,12 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				} else if name[0] == 'P' {
 					p, _ := strconv.Atoi(name[1:])
 					metadata.SetDoc(tsr, cfenv.TargetDoc(p))
+				} else if strings.HasPrefix(name, "In") {
+					p, _ := strconv.Atoi(name[2:])
+					metadata.SetDoc(tsr, cfenv.InTargetDoc(p))
+				} else if strings.HasPrefix(name, "Slot") {
+					sl, _ := strconv.Atoi(name[4:])
+					metadata.SetDoc(tsr, cfenv.SlotDoc(sl))
 				}
 			}
 			return
@@ -102,6 +130,10 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				ev.TrialStats(outVals, &ts)
 				vals := append(ts.Values(), ts.Probs...)
 				vals = append(vals, math.NaN())
+				vals = append(vals, ts.InProbs...)
+				vals = append(vals, math.NaN())
+				vals = append(vals, ts.Slots[1:]...)
+				vals = append(vals, math.NaN())
 				for i, stat := range vals {
 					name := names[i]
 					curModeDir.Float64(name, ndata).SetFloat1D(stat, di)
@@ -114,7 +146,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				sf = stats.StatFinal
 			}
 			for _, name := range names {
-				if name == "AbsDiff" && level != Run {
+				if (name == "AbsDiff" || name == "InAbsDiff" || name == "SlotRange") && level != Run {
 					continue
 				}
 				levelDir.Float64(name).AppendRowFloat(sf.Call(subDir.Value(name)).Float1D(0))
@@ -122,21 +154,35 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 			if level == Run {
 				return
 			}
-			ad, n := 0.0, 0
-			for i, nm := range targs {
-				p := levelDir.Float64(nm).Float1D(-1)
-				if math.IsNaN(p) {
-					continue
+			absDiff := func(nms []string) float64 {
+				ad, n := 0.0, 0
+				for i, nm := range nms {
+					p := levelDir.Float64(nm).Float1D(-1)
+					if math.IsNaN(p) {
+						continue
+					}
+					ad += math.Abs(p - pcts[i])
+					n++
 				}
-				ad += math.Abs(p - pcts[i])
-				n++
+				if n == 0 {
+					return math.NaN()
+				}
+				return ad / float64(n)
 			}
-			if n > 0 {
-				ad /= float64(n)
-			} else {
-				ad = math.NaN()
+			levelDir.Float64("AbsDiff").AppendRowFloat(absDiff(targs))
+			levelDir.Float64("InAbsDiff").AppendRowFloat(absDiff(inTargs))
+			mn, mx := math.Inf(1), math.Inf(-1)
+			for _, nm := range slotNms {
+				v := levelDir.Float64(nm).Float1D(-1)
+				if !math.IsNaN(v) {
+					mn, mx = min(mn, v), max(mx, v)
+				}
 			}
-			levelDir.Float64("AbsDiff").AppendRowFloat(ad)
+			rng := math.NaN()
+			if mx >= mn {
+				rng = mx - mn
+			}
+			levelDir.Float64("SlotRange").AppendRowFloat(rng)
 		}
 	}
 }
@@ -314,5 +360,140 @@ func (ss *Sim) StatConsist() func(mode Modes, level Levels, start bool) {
 		c, t := cfenv.ItemConsistency(envs...)
 		levelDir.Float64("Consist").AppendRowFloat(c)
 		levelDir.Float64("TieConsist").AppendRowFloat(t)
+	}
+}
+
+// silentNames returns the names of the StatSilent stats.
+func (ss *Sim) silentNames() []string {
+	var names []string
+	for _, ly := range ss.Net.Layers {
+		if ly.Type == axon.SuperLayer || ly.Type == axon.TargetLayer {
+			names = append(names, ly.Name+"_Silent")
+		}
+	}
+	return names
+}
+
+// StatSilent returns the stats function for whether each of the Encoder,
+// Hidden and Output layers is silent on a trial: 1 if no unit has minus
+// phase activity (ActM) above the env ActThr, as <Layer>_Silent. This
+// distinguishes a failure to propagate activity through the network
+// (e.g., a silent hidden layer on conflict trials, producing no output,
+// which counts as a Blend) from a real blend of two active groups.
+// Averaged over trials above the Trial level.
+func (ss *Sim) StatSilent() func(mode Modes, level Levels, start bool) {
+	var vals []float32
+	names := ss.silentNames()
+	var lays []*axon.Layer
+	for _, nm := range names {
+		lays = append(lays, ss.Net.LayerByName(strings.TrimSuffix(nm, "_Silent")))
+	}
+	thr := ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).Configs.ActThr
+	return func(mode Modes, level Levels, start bool) {
+		if level <= Cycle {
+			return
+		}
+		modeDir := ss.Stats.Dir(mode.String())
+		curModeDir := ss.Current.Dir(mode.String())
+		levelDir := modeDir.Dir(level.String())
+		subDir := modeDir.Dir((level - 1).String())
+		if start {
+			for _, name := range names {
+				tsr := levelDir.Float64(name)
+				tsr.SetNumRows(0)
+				plot.SetFirstStyler(tsr, func(s *plot.Style) {
+					s.Range.SetMin(0).SetMax(1)
+					if mode == Test {
+						s.On = true
+					}
+				})
+				metadata.SetDoc(tsr, "1 if no unit in the layer has minus phase activity above ActThr on the trial (averaged over trials above the Trial level): a failure to propagate activity. A silent Output counts as a Blend.")
+			}
+			return
+		}
+		if level == Trial {
+			ndata := int(ss.Net.Context().NData)
+			for li, ly := range lays {
+				name := names[li]
+				for di := range ndata {
+					vals = layerValues(ly, axon.ActM, di, vals)
+					silent := 1.0
+					for _, v := range vals {
+						if v > thr {
+							silent = 0
+							break
+						}
+					}
+					curModeDir.Float64(name, ndata).SetFloat1D(silent, di)
+					levelDir.Float64(name).AppendRowFloat(silent)
+				}
+			}
+			return
+		}
+		sf := stats.StatMean
+		if level == Run {
+			sf = stats.StatFinal
+		}
+		for _, name := range names {
+			levelDir.Float64(name).AppendRowFloat(sf.Call(subDir.Value(name)).Float1D(0))
+		}
+	}
+}
+
+// actGeNames returns the names of the StatTestActGe stats for the given
+// layers, the same as the training [axon.StatLayerActGe] stats.
+func actGeNames(layers []string) []string {
+	var names []string
+	for _, lnm := range layers {
+		for _, st := range []string{"ActMAvg", "ActMMax", "MaxGeM"} {
+			names = append(names, lnm+"_"+st)
+		}
+	}
+	return names
+}
+
+// StatTestActGe returns the stats function for the same layer activity
+// and conductance stats as [axon.StatLayerActGe] in training (ActMAvg,
+// ActMMax, MaxGeM), for testing: each is the mean over the test trials
+// at the Epoch level (where the training ActMAvg uses the layer's long
+// running average, which only reflects training).
+func (ss *Sim) StatTestActGe(layers ...string) func(mode Modes, level Levels, start bool) {
+	names := actGeNames(layers)
+	docs := []string{
+		"Minus phase average activity in the layer, averaged over test trials.",
+		"Minus phase maximum activity in the layer, averaged over test trials. If a layer is not very active, activity will not propagate efficiently to other layers.",
+		"Minus phase maximum Ge excitatory conductance in the layer, averaged over test trials. In general this should be above 1, but not greater than 3 or so.",
+	}
+	return func(mode Modes, level Levels, start bool) {
+		if mode != Test || level <= Cycle {
+			return
+		}
+		modeDir := ss.Stats.Dir(mode.String())
+		levelDir := modeDir.Dir(level.String())
+		if start {
+			for i, name := range names {
+				tsr := levelDir.Float64(name)
+				tsr.SetNumRows(0)
+				plot.SetFirstStyler(tsr, func(s *plot.Style) { s.Range.SetMin(0) })
+				metadata.SetDoc(tsr, docs[i%3])
+			}
+			return
+		}
+		if level == Trial {
+			ndata := int(ss.Net.Context().NData)
+			for li, lnm := range layers {
+				lpi := ss.Net.LayerByName(lnm).Params.PoolIndex(0)
+				for di := range ndata {
+					levelDir.Float64(names[3*li]).AppendRowFloat(float64(axon.PoolAvgMax(axon.AMAct, axon.AMMinus, axon.Avg, lpi, uint32(di))))
+					levelDir.Float64(names[3*li+1]).AppendRowFloat(float64(axon.PoolAvgMax(axon.AMAct, axon.AMMinus, axon.Max, lpi, uint32(di))))
+					levelDir.Float64(names[3*li+2]).AppendRowFloat(float64(axon.PoolAvgMax(axon.AMGeInt, axon.AMMinus, axon.Max, lpi, uint32(di))))
+				}
+			}
+			return
+		}
+		subDir := modeDir.Dir((level - 1).String())
+		for _, name := range names {
+			levelDir.Float64(name).AppendRow(stats.StatMean.Call(subDir.Value(name)))
+		}
 	}
 }

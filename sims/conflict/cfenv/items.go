@@ -46,6 +46,12 @@ func (it *Item) String(cfg *Config) string {
 	return s
 }
 
+// IsTie returns true if the item has two groups with equal expected
+// probabilities (equal evidence): a tie that the choice has to break.
+func (it *Item) IsTie() bool {
+	return len(it.Probs) == 2 && math.Abs(float64(it.Probs[0]-it.Probs[1])) < 1e-6
+}
+
 // GroupIndex returns the index of group g in Groups, or -1 if not present.
 func (it *Item) GroupIndex(g int) int { return slices.Index(it.Groups, g) }
 

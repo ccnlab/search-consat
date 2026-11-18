@@ -24,8 +24,8 @@ var TrialStatDocs = map[string]string{
 	"SecondRatio": "On conflict trials: the summed (thresholded) output activity of the second input group, divided by that of the top input group (the one with more activity).",
 	"OtherRatio":  "The summed (thresholded) output activity of all the groups that are not in the inputs, divided by that of the top input group, capped at 1.",
 	"MatchCos":    "Cosine between the output activity and the closest output pattern.",
-	"Slot0":       "On conflict trials with a choice of one of the input groups: 1 if it is the group in slot 0. 0.5 = no slot bias for 2 slots.",
-	"RepeatPrev":  "On conflict trials with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats the previous one. 0.5 = no carryover bias for 2 slots.",
+	"Slot0":       "On tied conflict trials (two input groups with equal evidence) with a choice of one of them: 1 if it is the group in slot 0. 0.5 = no slot bias.",
+	"RepeatPrev":  "On tied conflict trials (two input groups with equal evidence) with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats the previous one. 0.5 = no carryover bias.",
 	"AbsDiff":     "Mean across target probabilities of the absolute difference between the measured probability (P<target>) and the target.",
 }
 
@@ -189,7 +189,7 @@ func (ev *CFEnv) TrialStats(out []float32, ts *TrialStats) {
 		}
 	}
 	ts.Slot0, ts.RepeatPrev = math.NaN(), math.NaN()
-	if it.NConflict > 0 && gi >= 0 {
+	if it.IsTie() && gi >= 0 {
 		ts.Slot0 = 0
 		if ts.Choice == cfg.Group(it.Inputs[0]) {
 			ts.Slot0 = 1

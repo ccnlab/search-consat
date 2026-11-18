@@ -71,6 +71,10 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				tsr.SetNumRows(0)
 				plot.SetFirstStyler(tsr, func(s *plot.Style) {
 					s.Range.SetMin(0).SetMax(1)
+					if mode == Test {
+						s.Plot.Plotter = "Bar"
+						s.Plot.XAxis.Column = "TrainEpoch"
+					}
 					switch name {
 					case "P100", "AbsDiff", "Blend", "Intrusion":
 						s.On = true

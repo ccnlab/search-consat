@@ -176,6 +176,7 @@ func TestItems(t *testing.T) {
 func TestFreqs(t *testing.T) {
 	var cfg Config
 	cfg.Defaults()
+	cfg.NSlots = 2
 	cfg.GroupN = 2
 	cfg.Freqs = []float32{3, 1}
 	it := cfg.NewItem([]int{0, 3}) // group 0 member 0 (3), group 1 member 1 (1)
@@ -236,6 +237,7 @@ func TestSequence(t *testing.T) {
 func TestStats(t *testing.T) {
 	var cfg Config
 	cfg.Defaults()
+	cfg.NSlots = 2
 	ev := &CFEnv{Configs: cfg}
 	ev.Config(0, 1, 0, true, 0)
 	ev.Init(0)
@@ -274,13 +276,14 @@ func TestStats(t *testing.T) {
 		if ts.Blend != 0 || ts.Intrusion != 0 || ts.Choice != a || ts.OtherRatio != 0 || ts.MatchCos < 0.95 {
 			t.Fatalf("clean choice: %s: %v", ev.String(), ts.Values())
 		}
-		// other group below the intrusion ratio: still a choice
-		ev.TrialStats(mix(map[int]float32{a: 0.9, other: 0.4}), &ts)
-		if ts.Intrusion != 0 || ts.Choice != a || math.Abs(ts.OtherRatio-0.4/0.9) > 1e-5 {
-			t.Fatalf("other below ratio: %s: %v", ev.String(), ts.Values())
+		// other group below the intrusion threshold: still a choice
+		ob := 0.9 * (cfg.IntrusionThr - 0.1)
+		ev.TrialStats(mix(map[int]float32{a: 0.9, other: ob}), &ts)
+		if ts.Intrusion != 0 || ts.Choice != a || math.Abs(ts.OtherRatio-float64(ob/0.9)) > 1e-5 {
+			t.Fatalf("other below threshold: %s: %v", ev.String(), ts.Values())
 		}
-		// other group above the intrusion ratio
-		ev.TrialStats(mix(map[int]float32{a: 0.6, other: 0.4}), &ts)
+		// other group above the intrusion threshold
+		ev.TrialStats(mix(map[int]float32{a: 0.6, other: 0.6 * (cfg.IntrusionThr + 0.1)}), &ts)
 		if ts.Intrusion != 1 || ts.Choice != other {
 			t.Fatalf("intrusion: %s: %v", ev.String(), ts.Values())
 		}
@@ -525,5 +528,52 @@ func TestSavePatterns(t *testing.T) {
 	}
 	if !slices.Equal(pats.Float32("Outputs").Values, sp.Outputs.Values) {
 		t.Fatalf("outputs")
+	}
+}
+
+// TestTies checks that Slot0 and RepeatPrev are only computed on tied
+// conflict trials (equal evidence for the two input groups), for 4 slots,
+// and that IsTie uses the frequency-weighted evidence.
+func TestTies(t *testing.T) {
+	var cfg Config
+	cfg.Defaults()
+	cfg.NSlots = 4
+	cfg.TestPerLevel = 50
+	ev := &CFEnv{Configs: cfg}
+	ev.Config(0, 1, 0, true, 0)
+	ev.Init(0)
+	sp := ev.Space()
+	if !slices.Equal(ev.TargetNames(), []string{"P100", "P75", "P50", "P25"}) {
+		t.Fatalf("targets: %v", ev.TargetNames())
+	}
+	var ts TrialStats
+	nties := 0
+	for range len(sp.Test) {
+		ev.Step()
+		it := ev.Cur
+		ev.TrialStats(pattern(sp.Outputs, it.Groups[0]), &ts)
+		tie := it.NConflict == 2
+		if it.IsTie() != tie {
+			t.Fatalf("IsTie %v for %s", it.IsTie(), ev.String())
+		}
+		if tie {
+			nties++
+			if math.IsNaN(ts.Slot0) {
+				t.Fatalf("tie without Slot0: %s", ev.String())
+			}
+		} else if !math.IsNaN(ts.Slot0) || !math.IsNaN(ts.RepeatPrev) {
+			t.Fatalf("non-tie with Slot0 / RepeatPrev: %s: %v", ev.String(), ts.Values())
+		}
+	}
+	if nties == 0 {
+		t.Fatalf("no ties")
+	}
+	// with frequencies, 2:2 is not a tie unless the summed frequencies are equal
+	cfg.Freqs = []float32{3, 1, 1, 1}
+	if cfg.NewItem([]int{0, 0, 5, 5}).IsTie() { // group 0 member 0 (3+3) vs group 1 member 1 (1+1)
+		t.Errorf("unequal frequencies counted as a tie")
+	}
+	if !cfg.NewItem([]int{1, 2, 5, 6}).IsTie() { // all frequency 1
+		t.Errorf("equal frequencies not a tie")
 	}
 }

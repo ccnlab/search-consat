@@ -368,7 +368,7 @@ func (ev *PCombEnv) ValueCounts() (vals, probs []float32, counts []int) {
 // Decode returns the value decoded from the given output pattern,
 // which must have PopCodeUnits.
 func (ev *PCombEnv) Decode(pat []float32) float32 {
-	return DecodePeak(&ev.Configs.ValuePop, pat, 1)
+	return ev.Configs.ValuePop.DecodePeak(pat, 1)
 }
 
 // Match returns the index into vals (from [PCombEnv.ValueProbs]) of the

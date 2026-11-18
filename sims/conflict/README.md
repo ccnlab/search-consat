@@ -6,13 +6,13 @@ This tests what the network produces when its inputs conflict. It is trained onl
 
 - There are G groups (`NGroups`, default 5), each with its own output pattern.
 - Each group has g input patterns (`GroupN`, default 4), all of which map to the group's output pattern. By default, they are variations on a group prototype (see Patterns).
-- The input has k slots (`NSlots`, default 2).
+- The input has k slots (`NSlots`, default 4).
 
 **Training:** each trial chooses a group at random, and fills each slot with one of its input patterns (with replacement). The target is the group's output pattern. There is never any conflict in training.
 
 **Testing:** c of the k slots have inputs from a second group B, and the other k − c from group A, for c = 0 to k/2 (the number of conflicting inputs). c = 0 is the same as training: it checks that whatever noise is used doesn't disrupt the trained mapping.
 
-- By default (`TestPerLevel` = 0), all of the items are tested: for k = 2, that is 80 consistent and 320 conflict items. For larger k or g, `TestPerLevel` > 0 tests that many random items for each c instead, with random groups, slots, and inputs.
+- `TestPerLevel` (default 200) random items are tested for each c, with random groups, slots, and inputs: 600 items for k = 4. 0 tests all of the items: for k = 2 (with g = 4), that is 80 consistent and 320 conflict items, but for k = 4 it is 37,120 items. What matters for the precision of the probability stats is the number of trials per level, `TestPerLevel` × `TestReps`: 4,000 by default, for a standard error of about 0.008 at p = 0.5.
 - Each test runs through the whole list `TestReps` times (default 20), in a new random order each time. The activity carries over from one trial to the next in axon, so the residual activity from the previous trial acts as a natural source of noise across reps.
 - The test items are divided among the `NData` parallel envs.
 
@@ -64,7 +64,7 @@ The network is a model of cortex, which only needs to show a reasonable amount o
 - The Output minus-phase activity (ActM) is thresholded at `ActThr` (0.1), to ignore low-level activity, and summed over the units of each group's output pattern (its bar). With `RandOutput`, a unit shared by two patterns counts for both.
 - **Top** is the input group with the most activity, **Second** is the other input group (on conflict trials), and **Other** is the summed activity of all the groups that are not in the inputs.
 - The output is categorized as:
-  1. **Intrusion**, if `OtherRatio` = Other / Top > `IntrusionThr` (0.5). The choice is then the most active other group.
+  1. **Intrusion**, if `OtherRatio` = Other / Top > `IntrusionThr` (0.75). The choice is then the most active other group.
   2. **Blend**, if `SecondRatio` = Second / Top > `BlendThr` (0.75), or there is no activity above threshold.
   3. Otherwise, a **choice** of Top.
 
@@ -75,14 +75,15 @@ The network is a model of cortex, which only needs to show a reasonable amount o
 | `Blend` | Proportion of trials that are blends |
 | `Intrusion` | Proportion of trials that are intrusions |
 | `SecondRatio` | Second / Top activity, on conflict trials: 0 = only Top, 1 = equal. A blend is above `BlendThr` (0.75) |
-| `OtherRatio` | Other / Top activity, capped at 1. An intrusion is above `IntrusionThr` (0.5) |
+| `OtherRatio` | Other / Top activity, capped at 1. An intrusion is above `IntrusionThr` (0.75) |
 | `MatchCos` | Cosine between the output and the closest output pattern, as a raw diagnostic |
-| `Slot0` | On conflict trials with a choice of an input group: 1 if it is the group in slot 0. 0.5 = no slot bias (for k = 2) |
-| `RepeatPrev` | On conflict trials with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats it. 0.5 = no carryover bias (for k = 2) |
+| `Slot0` | On tied conflict trials (two input groups with equal evidence, e.g., 2:2 for k = 4) with a choice of one of them: 1 if it is the group in slot 0. 0.5 = no slot bias |
+| `RepeatPrev` | On tied conflict trials with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats it. 0.5 = no carryover bias |
 
 - The ratios are relative to Top (from 0 to 1), so they average cleanly, and a missing Second or Other gives 0 instead of an infinite ratio.
 - The probability stats are computed per trial (the mean over the input groups with that target of whether each was chosen, NaN if none), and averaged over trials.
 - For k = 2, `P50` combines both groups on conflict trials, so it is (1 − `Blend` − `Intrusion`) / 2 on those trials. The symmetry between the two groups is measured by `Slot0`.
+- `Slot0` and `RepeatPrev` only use tied trials, because on trials with unequal evidence (e.g., 3:1 for k = 4), the choice is driven by the evidence: under majority rule, the slot 0 input is in the chosen (majority) group 3/4 of the time, and whether the choice repeats the previous one depends on which group won last time. For k = 2, all conflict trials are ties.
 - `Stats/Test/SecondRatioHist` (the `Test SecondRatioHist` bar plot tab) has the distribution of `SecondRatio` across the conflict trials in testing, in 10 bins from 0 to 1, as the proportion of trials in each bin. The counts are accumulated over all the tests from training epoch `Epochs` / 2 on (including the final test), in each run. Before that, it shows the last test. This distinguishes a mix of clear choices (near 0) and blends (near 1) from a consistent partial preference.
 - The Train Epoch and Run logs have the latest test values as `Test_<stat>`: each epoch has the values from the latest test in the run (NaN before the first one), so they plot as a step line. The Run value is from the final test.
 

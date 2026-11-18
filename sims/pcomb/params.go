@@ -21,7 +21,7 @@ var LayerParams = axon.LayerSheets{
 			}},
 		{Sel: ".Input", Doc: "Value and Prob cue inputs: about 6 of 22 units active per active cue, 2-4 of 4 cues active",
 			Set: func(ly *axon.LayerParams) {
-				ly.Inhib.ActAvg.Nominal = 0.08 // 0.08 > 0.05 for long-term gemax 
+				ly.Inhib.ActAvg.Nominal = 0.08 // 0.08 > 0.05 for long-term gemax
 				ly.Inhib.Layer.On.SetBool(true)
 				ly.Inhib.Pool.On.SetBool(true)
 				ly.Inhib.Layer.Gi = 0.95
@@ -67,7 +67,7 @@ var PathParams = axon.PathSheets{
 	"Base": {
 		{Sel: "Path", Doc: "std",
 			Set: func(pt *axon.PathParams) {
-				pt.Learn.LRate.Base = 0.005 // 0.005 >= 0.01 (deteriorates?) > 0.002 (too slow) 
+				pt.Learn.LRate.Base = 0.005 // 0.005 >= 0.01 (deteriorates?) > 0.002 (too slow)
 				pt.SWts.Init.SPct = 1
 				pt.SWts.Adapt.LRate = 0.0001
 				pt.Learn.DWt.SubMean = 1

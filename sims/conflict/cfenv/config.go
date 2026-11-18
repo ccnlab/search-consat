@@ -94,7 +94,7 @@ type Config struct {
 }
 
 func (cfg *Config) Defaults() {
-	cfg.NSlots = 2
+	cfg.NSlots = 4
 	cfg.NGroups = 5
 	cfg.GroupN = 4
 	cfg.PoolSize = 7
@@ -107,7 +107,7 @@ func (cfg *Config) Defaults() {
 	cfg.ActThr = 0.1
 	cfg.BlendThr = 0.75
 	cfg.IntrusionThr = 0.75
-	cfg.TestPerLevel = 0
+	cfg.TestPerLevel = 200
 	cfg.TestReps = 20
 	cfg.Seed = 137
 }

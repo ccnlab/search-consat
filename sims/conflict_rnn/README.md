@@ -16,7 +16,8 @@ Hidden1  [15, 15]                (ReLU)
 Input    [1, k, 7, 7]
 ```
 
-- Forward paths go up the stack, and Back paths come down it (except to the Input). `Lateral` adds lateral connections within each hidden layer, and `OutputLateral` within the Output.
+- Forward paths go up the stack, and Back paths come down it (except to the Input). `Lateral` adds lateral connections within each hidden layer, and `OutputLateral` within the Output. These full lateral connections include each unit's connection to itself.
+- `NEncoder` (default 0) adds encoder layers below the hidden layers (`Encoder1`, ...), as in the axon model: one pool per input slot, of size `EncoderSize`, with pool-to-pool (one-to-one) Forward and Back connections, so each slot is encoded separately. `EncoderLateral` adds lateral connections within each pool. With both encoder and hidden layers, `Shortcut` adds full Forward connections from the last encoder layer to the Output, and `EncoderBack` full Back connections from the Output to it. Either `NEncoder` or `NHidden` can be 0.
 - The network settles for `NCycles` (default 10) cycles, using egomlx recurrent settling: on each cycle, Forward paths use the sender's current-cycle activity, and Back and Lateral paths its previous-cycle activity (zero on the first cycle). The weights are shared across cycles, and the loss is on the final cycle, so learning is backpropagation through time.
 - `Noise` (default 0.2) is the standard deviation of Gaussian noise added to the net input of the hidden layers on every cycle, in training and testing. With the default `Decay` of 1, it is the only source of variability across repetitions of the same item: each trial starts from zero activity, with no carryover between trials.
 - `HiddenFn` (default ReLU) is the activation function of the hidden layers.

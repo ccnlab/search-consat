@@ -216,28 +216,58 @@ func (ss *Sim) ConfigNet(net *egomlx.Network) {
 	ps := cfg.PoolSize
 	hs := ss.Config.Params.HiddenSize
 
+	pc := &ss.Config.Params
+	es := pc.EncoderSize
 	full := paths.NewFull()
+	// full lateral connections include each unit's connection to itself,
+	// as egomlx always did before it applied connectivity patterns.
+	fullSelf := paths.NewFull()
+	fullSelf.SelfCon = true
+	p1to1 := paths.NewPoolOneToOne()
 	inp := net.AddLayer4D("Input", egomlx.Input, 1, cfg.NSlots, ps, ps)
 	prev := inp
-	pc := &ss.Config.Params
-	for i := range max(pc.NHidden, 1) {
+	var lastEnc *egomlx.Layer
+	for i := range pc.NEncoder {
+		enc := net.AddLayer4D(fmt.Sprintf("Encoder%d", i+1), egomlx.Hidden, 1, cfg.NSlots, es, es)
+		enc.AddClass("Encoder")
+		enc.PlaceAbove(prev)
+		net.ConnectLayers(prev, enc, p1to1, egomlx.Forward)
+		if prev != inp {
+			net.ConnectLayers(enc, prev, p1to1, egomlx.Back)
+		}
+		if pc.EncoderLateral {
+			net.ConnectLayers(enc, enc, p1to1, egomlx.Lateral)
+		}
+		prev, lastEnc = enc, enc
+	}
+	for i := range pc.NHidden {
 		hid := net.AddLayer2D(fmt.Sprintf("Hidden%d", i+1), egomlx.Hidden, hs, hs)
 		hid.PlaceAbove(prev)
 		net.ConnectLayers(prev, hid, full, egomlx.Forward)
-		if i > 0 {
+		if prev != inp {
 			net.ConnectLayers(hid, prev, full, egomlx.Back)
 		}
 		if pc.Lateral {
-			net.ConnectLayers(hid, hid, full, egomlx.Lateral)
+			net.ConnectLayers(hid, hid, fullSelf, egomlx.Lateral)
 		}
 		prev = hid
 	}
 	out := net.AddLayer2D("Output", egomlx.Target, cfg.NPerOutput, cfg.NGroups)
 	out.PlaceAbove(prev)
 	net.ConnectLayers(prev, out, full, egomlx.Forward)
-	net.ConnectLayers(out, prev, full, egomlx.Back)
+	if prev != inp {
+		net.ConnectLayers(out, prev, full, egomlx.Back)
+	}
 	if pc.OutputLateral {
-		net.ConnectLayers(out, out, full, egomlx.Lateral)
+		net.ConnectLayers(out, out, fullSelf, egomlx.Lateral)
+	}
+	if lastEnc != nil && pc.NHidden > 0 {
+		if pc.Shortcut {
+			net.ConnectLayers(lastEnc, out, full, egomlx.Forward).AddClass("Shortcut")
+		}
+		if pc.EncoderBack {
+			net.ConnectLayers(out, lastEnc, full, egomlx.Back).AddClass("EncoderBack")
+		}
 	}
 
 	err := net.Build()

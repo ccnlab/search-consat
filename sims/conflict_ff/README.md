@@ -15,6 +15,7 @@ Input    [1, k, 7, 7]
 ```
 
 - `NHidden` (default 2) sets the number of hidden layers, and `HiddenSize` their size.
+- `NEncoder` (default 0) adds encoder layers below the hidden layers (`Encoder1`, ...), as in the axon model: one pool per input slot, of size `EncoderSize`, with pool-to-pool (one-to-one) connections, so each slot is encoded separately. With both encoder and hidden layers, `Shortcut` adds full connections from the last encoder layer to the Output. Either `NEncoder` or `NHidden` can be 0.
 - Loss and optimizer: BCE loss, Adam with LR 0.001. Weights: Glorot init, with biases.
 - The network is deterministic: each test item always produces the same output, so the `TestReps` repetitions are identical, and there is no carryover between trials (`RepeatPrev` is at chance).
 

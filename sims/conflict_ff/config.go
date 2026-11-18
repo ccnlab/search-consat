@@ -21,12 +21,27 @@ type EnvConfig struct {
 // ParamConfig has config parameters related to sim params.
 type ParamConfig struct {
 
-	// NHidden is the number of hidden layers, in a feedforward stack
-	// between the Input and the Output.
-	NHidden int `default:"2" min:"1"`
+	// NEncoder is the number of encoder layers (Encoder1, ...), in a
+	// feedforward stack above the Input, each with one pool per input slot
+	// and pool-to-pool (one-to-one) connections. 0 = none.
+	NEncoder int `default:"0" min:"0"`
+
+	// EncoderSize is the size of each encoder layer pool (square).
+	EncoderSize int `default:"12"`
+
+	// NHidden is the number of hidden layers (Hidden1, ...), in a fully
+	// connected feedforward stack above the encoders (or the Input), below
+	// the Output. 0 = none: the Output is connected to the last encoder
+	// layer (or the Input).
+	NHidden int `default:"2" min:"0"`
 
 	// HiddenSize is the size of each hidden layer (square).
 	HiddenSize int `default:"15"`
+
+	// Shortcut adds full connections from the last encoder layer to the
+	// Output, bypassing the hidden layers. Only used if there are encoder
+	// and hidden layers.
+	Shortcut bool
 
 	// WeightDecay is the decoupled weight decay strength: if > 0, the
 	// AdamW optimizer is used with this weight decay, which shrinks the

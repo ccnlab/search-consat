@@ -211,10 +211,21 @@ func (ss *Sim) ConfigNet(net *egomlx.Network) {
 	ps := cfg.PoolSize
 	hs := ss.Config.Params.HiddenSize
 
+	pc := &ss.Config.Params
+	es := pc.EncoderSize
 	full := paths.NewFull()
+	p1to1 := paths.NewPoolOneToOne()
 	inp := net.AddLayer4D("Input", egomlx.Input, 1, cfg.NSlots, ps, ps)
 	prev := inp
-	for i := range max(ss.Config.Params.NHidden, 1) {
+	var lastEnc *egomlx.Layer
+	for i := range pc.NEncoder {
+		enc := net.AddLayer4D(fmt.Sprintf("Encoder%d", i+1), egomlx.Hidden, 1, cfg.NSlots, es, es)
+		enc.AddClass("Encoder")
+		enc.PlaceAbove(prev)
+		net.ConnectLayers(prev, enc, p1to1, egomlx.Forward)
+		prev, lastEnc = enc, enc
+	}
+	for i := range pc.NHidden {
 		hid := net.AddLayer2D(fmt.Sprintf("Hidden%d", i+1), egomlx.Hidden, hs, hs)
 		hid.PlaceAbove(prev)
 		net.ConnectLayers(prev, hid, full, egomlx.Forward)
@@ -223,6 +234,9 @@ func (ss *Sim) ConfigNet(net *egomlx.Network) {
 	out := net.AddLayer2D("Output", egomlx.Target, cfg.NPerOutput, cfg.NGroups)
 	out.PlaceAbove(prev)
 	net.ConnectLayers(prev, out, full, egomlx.Forward)
+	if pc.Shortcut && lastEnc != nil && pc.NHidden > 0 {
+		net.ConnectLayers(lastEnc, out, full, egomlx.Forward).AddClass("Shortcut")
+	}
 
 	err := net.Build()
 	if errors.Log(err) != nil {

@@ -3,11 +3,11 @@ module github.com/ccnlab/search-consat/sims
 go 1.27.0
 
 require (
-	cogentcore.org/core v0.5.37
-	cogentcore.org/lab v0.2.17
-	github.com/emer/axon/v2 v2.0.10
-	github.com/emer/egomlx v0.1.1
-	github.com/emer/emergent/v2 v2.0.4
+	cogentcore.org/core v0.5.44
+	cogentcore.org/lab v0.2.21
+	github.com/emer/axon/v2 v2.0.13
+	github.com/emer/egomlx v0.1.2
+	github.com/emer/emergent/v2 v2.0.5
 )
 
 require (

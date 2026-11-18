@@ -40,17 +40,20 @@ The stats for each target probability are named by its rounded percent: `P100`, 
 ## Network
 
 ```
-Output   [NPerOutput, NGroups]   Target
-   ↕ full
-Hidden2  [15, 15]
-   ↕ full
-Hidden1  [15, 15]
-   ↑ full
-Input    [1, k, 7, 7]
+Output    [NPerOutput, NGroups]   Target
+   ↕ full                ↖ Shortcut (↘ EncoderBack)
+Hidden1   [20, 20]                 |
+   ↕ full                          |
+Encoder1  [1, k, 12, 12]   ────────┘
+   ↑ pool one-to-one
+Input     [1, k, 7, 7]
 ```
 
-- `NHidden` (default 2) sets the number of hidden layers, connected bidirectionally in a stack. `HiddenSize` sets their size.
-- `Lateral` adds full lateral (self) connections within each hidden layer, and `OutputLateral` within the Output layer. Both are off by default.
+- `NEncoder` (default 1) sets the number of encoder layers (`Encoder1`, ...), each with one pool per input slot, of size `EncoderSize`. They have pool-to-pool (one-to-one) connections: Forward from the Input, and bidirectional between encoder layers, so each slot is encoded separately. `EncoderLateral` adds lateral connections within each pool. The encoder layers have the `Encoder` class for params.
+- `NHidden` (default 1) sets the number of hidden layers (`Hidden1`, ...), fully connected bidirectionally in a stack above the encoders, of size `HiddenSize`. `Lateral` adds full lateral connections within each hidden layer.
+- Either can be 0: with no hidden layers, the Output is connected bidirectionally to the last encoder layer, and with neither, the Input connects directly to the Output.
+- With both encoder and hidden layers, `Shortcut` adds full Forward connections from the last encoder layer to the Output (class `Shortcut`), and `EncoderBack` adds full Back connections from the Output to it (class `EncoderBack`, and `BackPath`).
+- `OutputLateral` adds full lateral connections within the Output layer. All of the optional pathways are off by default.
 - The params are from pcomb.
 
 ## Running

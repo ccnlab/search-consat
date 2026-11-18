@@ -5,6 +5,7 @@
 package conflict
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"testing"
@@ -157,7 +158,7 @@ func TestTestCopy(t *testing.T) {
 	}
 	// silent layer and test activity stats, and their copies
 	te := ss.Stats.Dir("Test/Epoch")
-	for _, nm := range []string{"Hidden1_Silent", "Output_Silent", "Encoder_Silent", "Hidden1_ActMAvg", "Hidden1_ActMMax", "Hidden1_MaxGeM"} {
+	for _, nm := range []string{"Hidden1_Silent", "Output_Silent", "Encoder1_Silent", "Hidden1_ActMAvg", "Hidden1_ActMMax", "Hidden1_MaxGeM"} {
 		v := te.Float64(nm).Float1D(-1)
 		cp := ss.Stats.Dir("Train/Run").Float64("Test_" + nm)
 		t.Logf("Test %s = %.3f", nm, v)
@@ -273,5 +274,58 @@ func TestSynFail(t *testing.T) {
 		if gpu {
 			axon.GPURelease()
 		}
+	}
+}
+
+// TestLayerConfigs builds and runs the network with different numbers of
+// encoder and hidden layers (including none) and the optional pathways,
+// checking the layers and pathways, and that a short training run and
+// test produce the output stats.
+func TestLayerConfigs(t *testing.T) {
+	type lc struct {
+		nenc, nhid                     int
+		encLat, short, encBack, outLat bool
+		layers                         []string
+		npaths                         int
+	}
+	cases := []lc{
+		{nenc: 0, nhid: 0, layers: []string{"Input", "Output"}, npaths: 1},
+		{nenc: 0, nhid: 1, layers: []string{"Input", "Hidden1", "Output"}, npaths: 3},
+		{nenc: 1, nhid: 0, encLat: true, short: true, encBack: true, layers: []string{"Input", "Encoder1", "Output"}, npaths: 4},
+		{nenc: 2, nhid: 1, encLat: true, short: true, encBack: true, outLat: true, layers: []string{"Input", "Encoder1", "Encoder2", "Hidden1", "Output"}, npaths: 12},
+		{nenc: 1, nhid: 2, layers: []string{"Input", "Encoder1", "Hidden1", "Hidden2", "Output"}, npaths: 7},
+	}
+	for _, c := range cases {
+		cfg, _ := egui.NewConfig[Config]()
+		cfg.GPU = false
+		cfg.GUI = false
+		cfg.Run.NData = 4
+		cfg.Run.Trials = 16
+		cfg.Run.Epochs = 1
+		cfg.Run.Runs = 1
+		cfg.Params.NEncoder, cfg.Params.NHidden = c.nenc, c.nhid
+		cfg.Params.EncoderLateral, cfg.Params.Shortcut, cfg.Params.EncoderBack = c.encLat, c.short, c.encBack
+		cfg.Params.OutputLateral = c.outLat
+		cfg.Params.Lateral = false
+		cfg.Env.Env = map[string]any{"TestPerLevel": 4, "TestReps": 1}
+		ss := &Sim{}
+		ss.SetConfig(cfg)
+		ss.ConfigSim()
+		var names []string
+		npaths := 0
+		for _, ly := range ss.Net.Layers {
+			names = append(names, ly.Name)
+			npaths += len(ly.RecvPaths)
+		}
+		name := fmt.Sprintf("enc %d hid %d", c.nenc, c.nhid)
+		if !slices.Equal(names, c.layers) || npaths != c.npaths {
+			t.Errorf("%s: layers %v, paths %d, expected %v, %d", name, names, npaths, c.layers, c.npaths)
+		}
+		ss.Loops.Run(Train)
+		p := ss.Stats.Dir("Train/Run").Float64("Test_P100")
+		if p.Len() != 1 || math.IsNaN(p.Values[0]) {
+			t.Errorf("%s: no test results: %v", name, p.Values)
+		}
+		t.Logf("%s: layers %v, %d paths, Test_P100 %v", name, names, npaths, p.Values)
 	}
 }

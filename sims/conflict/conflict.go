@@ -203,30 +203,58 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	hs := pc.HiddenSize
 
 	inp := net.AddLayer4D("Input", axon.InputLayer, 1, cfg.NSlots, ps, ps).AddClass("Input")
-	out := net.AddLayer2D("Output", axon.TargetLayer, cfg.NPerOutput, cfg.NGroups).AddClass("Target")
-	enc := net.AddLayer4D("Encoder", axon.SuperLayer, 1, cfg.NSlots, es, es).AddClass("Encoder")
-	enc.PlaceAbove(inp)
 
+	// Encoder layers: one pool per slot, with pool-to-pool connections.
 	p1to1 := paths.NewPoolOneToOne()
-	net.ConnectLayers(inp, enc, p1to1, axon.ForwardPath)
 	full := paths.NewFull()
-	prev := enc
+	prev := inp
+	var lastEnc *axon.Layer
+	for i := range pc.NEncoder {
+		enc := net.AddLayer4D(fmt.Sprintf("Encoder%d", i+1), axon.SuperLayer, 1, cfg.NSlots, es, es).AddClass("Encoder")
+		enc.PlaceAbove(prev)
+		if prev == inp {
+			net.ConnectLayers(inp, enc, p1to1, axon.ForwardPath)
+		} else {
+			net.BidirConnectLayers(prev, enc, p1to1)
+		}
+		if pc.EncoderLateral {
+			net.LateralConnectLayer(enc, p1to1)
+		}
+		prev, lastEnc = enc, enc
+	}
+
+	// Hidden layers: full connections.
 	for i := range pc.NHidden {
 		hid := net.AddLayer2D(fmt.Sprintf("Hidden%d", i+1), axon.SuperLayer, hs, hs).AddClass("Hidden")
 		hid.PlaceAbove(prev)
-		net.BidirConnectLayers(prev, hid, full)
+		if prev == inp {
+			net.ConnectLayers(inp, hid, full, axon.ForwardPath)
+		} else {
+			net.BidirConnectLayers(prev, hid, full)
+		}
 		if pc.Lateral {
 			net.LateralConnectLayer(hid, full)
 		}
 		prev = hid
 	}
+
+	out := net.AddLayer2D("Output", axon.TargetLayer, cfg.NPerOutput, cfg.NGroups).AddClass("Target")
 	out.PlaceAbove(prev)
-	net.BidirConnectLayers(prev, out, full)
+	if prev == inp {
+		net.ConnectLayers(inp, out, full, axon.ForwardPath)
+	} else {
+		net.BidirConnectLayers(prev, out, full)
+	}
 	if pc.OutputLateral {
 		net.LateralConnectLayer(out, full)
 	}
-	if pc.Shortcut {
-		net.ConnectLayers(enc, out, full, axon.ForwardPath).AddClass("Shortcut")
+	if lastEnc != nil && pc.NHidden > 0 { // otherwise already connected
+		if pc.Shortcut {
+			net.ConnectLayers(lastEnc, out, full, axon.ForwardPath).AddClass("Shortcut")
+		}
+		if pc.EncoderBack {
+			net.ConnectLayers(out, lastEnc, full, axon.BackPath).AddClass("EncoderBack")
+		}
 	}
 
 	net.Build()
@@ -534,21 +562,22 @@ func (ss *Sim) ConfigStats() {
 	// get test stats in train log
 	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev", "Consist", "TieConsist", "InAbsDiff", "SlotRange"}, append(append(append(ss.targetNames(), ss.inTargetNames()...), ss.slotNames()...), ss.silentNames()...)...)...))
 
-	lays := net.LayersByType(axon.SuperLayer, axon.CTLayer, axon.InputLayer, axon.TargetLayer)
+	lays := net.LayersByTypeTry(axon.SuperLayer, axon.CTLayer, axon.InputLayer, axon.TargetLayer)
 	ss.AddStatStd(axon.StatLayerActGe(ss.Stats, net, Train, Trial, Run, lays...))
 	ss.AddStat(ss.StatTestActGe(lays...))
 	ss.AddStat(ss.StatTestCopy(actGeNames(lays)...))
 	ss.AddStatStd(axon.StatLayerGiMult(ss.Stats, net, Train, Epoch, Run, lays...))
 
-	superLays := net.LayersByType(axon.SuperLayer, axon.CTLayer)
-	ss.AddStatStd(axon.StatLearnTiming(ss.Stats, ss.Current, net, Trial, Run, superLays...))
-
-	noTarglays := net.LayersByType(axon.SuperLayer, axon.CTLayer)
-	pcaFunc := axon.StatPCA(ss.Stats, ss.Current, net, ss.Config.Run.PCAInterval, Train, Trial, Run, noTarglays...)
-	ss.AddStat(func(mode Modes, level Levels, start bool) {
-		trnEpc := ss.Loops.Loop(Train, Epoch).Counter.Cur
-		pcaFunc(mode, level, start, trnEpc)
-	})
+	// the encoder and hidden layers, if any
+	superLays := net.LayersByTypeTry(axon.SuperLayer, axon.CTLayer)
+	if len(superLays) > 0 {
+		ss.AddStatStd(axon.StatLearnTiming(ss.Stats, ss.Current, net, Trial, Run, superLays...))
+		pcaFunc := axon.StatPCA(ss.Stats, ss.Current, net, ss.Config.Run.PCAInterval, Train, Trial, Run, superLays...)
+		ss.AddStat(func(mode Modes, level Levels, start bool) {
+			trnEpc := ss.Loops.Loop(Train, Epoch).Counter.Cur
+			pcaFunc(mode, level, start, trnEpc)
+		})
+	}
 
 	// ss.AddStatStd(axon.StatLayerState(ss.Stats, net, Test, Trial, true, "ActM", "Input", "Output"))
 

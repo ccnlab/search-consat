@@ -283,3 +283,36 @@ func (ss *Sim) StatSecondHist(nBins int) func(mode Modes, level Levels, start bo
 		}
 	}
 }
+
+// StatConsist returns a stats function that computes the consistency of
+// the choices for the same test item across its repetitions, at the end
+// of each test, from all the parallel test envs ([cfenv.ItemConsistency]):
+// Consist over the conflict items, and TieConsist over the tied items.
+func (ss *Sim) StatConsist() func(mode Modes, level Levels, start bool) {
+	names := []string{"Consist", "TieConsist"}
+	return func(mode Modes, level Levels, start bool) {
+		if mode != Test || level != Epoch {
+			return
+		}
+		levelDir := ss.Stats.Dir("Test/Epoch")
+		if start {
+			for _, name := range names {
+				tsr := levelDir.Float64(name)
+				tsr.SetNumRows(0)
+				plot.SetFirstStyler(tsr, func(s *plot.Style) {
+					s.Range.SetMin(0).SetMax(1)
+					s.On = true
+				})
+				metadata.SetDoc(tsr, cfenv.TrialStatDocs[name])
+			}
+			return
+		}
+		var envs []*cfenv.CFEnv
+		for di := range ss.Config.Run.NData {
+			envs = append(envs, ss.Envs.ByModeDi(Test, di).(*cfenv.CFEnv))
+		}
+		c, t := cfenv.ItemConsistency(envs...)
+		levelDir.Float64("Consist").AppendRowFloat(c)
+		levelDir.Float64("TieConsist").AppendRowFloat(t)
+	}
+}

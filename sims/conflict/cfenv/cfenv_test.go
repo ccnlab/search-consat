@@ -7,6 +7,7 @@ package cfenv
 import (
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"slices"
 	"testing"
 
@@ -575,5 +576,45 @@ func TestTies(t *testing.T) {
 	}
 	if !cfg.NewItem([]int{1, 2, 5, 6}).IsTie() { // all frequency 1
 		t.Errorf("equal frequencies not a tie")
+	}
+}
+
+// TestItemConsistency checks the per-item choice consistency across the
+// test repetitions, split across parallel envs: 1 for a deterministic
+// choice for each item, and about 0.59 for coin flips on 20 repetitions.
+func TestItemConsistency(t *testing.T) {
+	var cfg Config
+	cfg.Defaults()
+	cfg.NSlots = 2
+	cfg.TestPerLevel = 40
+	cfg.TestReps = 20
+	ndata := 4
+	run := func(choose func(ev *CFEnv, rnd *rand.Rand) int) (float64, float64) {
+		rnd := rand.New(rand.NewPCG(1, 2))
+		var envs []*CFEnv
+		for di := range ndata {
+			ev := &CFEnv{Configs: cfg}
+			ev.Config(0, ndata, di, true, 181+int64(di))
+			ev.Init(0)
+			sp := ev.Space()
+			var ts TrialStats
+			for range ev.Trial.Max {
+				ev.Step()
+				ev.TrialStats(pattern(sp.Outputs, choose(ev, rnd)), &ts)
+			}
+			envs = append(envs, ev)
+		}
+		return ItemConsistency(envs...)
+	}
+	// deterministic: the group in slot 0
+	c, ties := run(func(ev *CFEnv, rnd *rand.Rand) int { return cfg.Group(ev.Cur.Inputs[0]) })
+	if c != 1 || ties != 1 {
+		t.Errorf("deterministic: consist %g, ties %g", c, ties)
+	}
+	// coin flip between the two groups
+	c, ties = run(func(ev *CFEnv, rnd *rand.Rand) int { return ev.Cur.Groups[rnd.IntN(len(ev.Cur.Groups))] })
+	t.Logf("coin flip: consist %.3f, ties %.3f", c, ties)
+	if math.Abs(ties-0.59) > 0.05 {
+		t.Errorf("coin flip ties consistency %g, want about 0.59", ties)
 	}
 }

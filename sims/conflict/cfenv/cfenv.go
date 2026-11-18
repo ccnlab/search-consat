@@ -73,6 +73,11 @@ type CFEnv struct {
 	// PrevChoice is the group produced on the previous trial (-1 = none).
 	PrevChoice int
 
+	// Counts are the counts of each choice (index Choice + 1, so 0 = Blend)
+	// for each test item (by index in [Space.Test]) in the current test,
+	// across its repetitions, for [ItemConsistency].
+	Counts map[int][]int `display:"-"`
+
 	// Rand is the random number generator for the env.
 	Rand randx.Rand `display:"-"`
 
@@ -136,6 +141,7 @@ func (ev *CFEnv) Init(run int) {
 	if !ev.IsTest {
 		return
 	}
+	ev.Counts = make(map[int][]int)
 	// each rep is a new permutation of the items, padded with random
 	// items so that all the envs have the same number of trials.
 	per := ev.TestTrials() / ev.Configs.TestReps

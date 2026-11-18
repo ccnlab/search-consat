@@ -79,10 +79,13 @@ The network is a model of cortex, which only needs to show a reasonable amount o
 | `MatchCos` | Cosine between the output and the closest output pattern, as a raw diagnostic |
 | `Slot0` | On tied conflict trials (two input groups with equal evidence, e.g., 2:2 for k = 4) with a choice of one of them: 1 if it is the group in slot 0. 0.5 = no slot bias |
 | `RepeatPrev` | On tied conflict trials with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats it. 0.5 = no carryover bias |
+| `Consist` | Test only: the consistency of the choice for the same conflict item across its `TestReps` repetitions: the proportion of repetitions with its most common choice (a blend counts as a choice), averaged over the conflict items. 1 = the same choice every time |
+| `TieConsist` | `Consist` for the tied items: 1 = the same choice every time, about 0.59 = a coin flip (for 20 repetitions) |
 
 - The ratios are relative to Top (from 0 to 1), so they average cleanly, and a missing Second or Other gives 0 instead of an infinite ratio.
 - The probability stats are computed per trial (the mean over the input groups with that target of whether each was chosen, NaN if none), and averaged over trials.
 - For k = 2, `P50` combines both groups on conflict trials, so it is (1 − `Blend` − `Intrusion`) / 2 on those trials. The symmetry between the two groups is measured by `Slot0`.
+- The probability stats do not distinguish between stochastic choices and fixed preferences for specific items: e.g., a P67 of 0.87 could be 13% of the items always going to the minority group. `Consist` and `TieConsist` measure this, from the choices for the same item across the repetitions in a test.
 - `Slot0` and `RepeatPrev` only use tied trials, because on trials with unequal evidence (e.g., 3:1 for k = 4), the choice is driven by the evidence: under majority rule, the slot 0 input is in the chosen (majority) group 3/4 of the time, and whether the choice repeats the previous one depends on which group won last time. For k = 2, all conflict trials are ties.
 - `Stats/Test/SecondRatioHist` (the `Test SecondRatioHist` bar plot tab) has the distribution of `SecondRatio` across the conflict trials in testing, in 10 bins from 0 to 1, as the proportion of trials in each bin. The counts are accumulated over all the tests from training epoch `Epochs` / 2 on (including the final test), in each run. Before that, it shows the last test. This distinguishes a mix of clear choices (near 0) and blends (near 1) from a consistent partial preference.
 - The Train Epoch and Run logs have the latest test values as `Test_<stat>`: each epoch has the values from the latest test in the run (NaN before the first one), so they plot as a step line. The Run value is from the final test.
@@ -94,3 +97,16 @@ A first run with the pcomb params and the earlier cosine metric (`MatchThr` 0.8)
 - Training levels off at about 70% clean outputs.
 - The carryover is strong: on conflict trials, the choice repeats the previous trial's choice 87% of the time, and 13% of test trials produce the previous group even when it is not in the inputs. The default `Decay.Act` is 0.2.
 - With full decay between trials (`Decay.Act` and `Decay.Glong` = 1), the network fails completely (98% blends), so the carryover is what drives the output to a single bar with these params.
+
+### Source of the variability (k = 6)
+
+With `NSlots` = 6 and output laterals, the choice is a graded function of the evidence, and it varies across the repetitions of the same item:
+
+| Noise | P83 | P67 | P50 | P33 | Intrusion | RepeatPrev | Consist | TieConsist |
+|---|---|---|---|---|---|---|---|---|
+| 0.01 | 1.0 | 0.87 | 0.31 | 0.014 | 0.10 | 0.90 | 0.77 | 0.43 |
+| 0 | 1.0 | 0.90 | 0.30 | 0.009 | 0.10 | 0.91 | 0.78 | 0.44 |
+
+- The results are the same without noise, so the variability across repetitions comes from the activity carried over from the previous trial, not from noise: on ties, the choice repeats the previous trial's choice about 90% of the time.
+- `TieConsist` is below the 0.59 of a coin flip between the two groups because there are more than two outcomes: intrusions (mostly the previous trial's group) are about 10% of the trials.
+- The backprop baselines are deterministic without carryover ([conflict_ff](../conflict_ff/README.md), and [conflict_rnn](../conflict_rnn/README.md) with `Decay` = 1). With carryover (`Decay` < 1), conflict_rnn also breaks ties by the previous trial, but without intrusions.

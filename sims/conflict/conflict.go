@@ -519,11 +519,12 @@ func (ss *Sim) ConfigStats() {
 	ss.AddStatStd(axon.StatPerTrialMSec(ss.Stats, Train, Trial))
 
 	ss.AddStat(ss.StatOutput())
+	ss.AddStat(ss.StatConsist())
 	ss.PatternDistMatrix()
 	ss.AddStat(ss.StatSecondHist(10))
 
 	// get test stats in train log
-	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev"}, ss.targetNames()...)...))
+	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "Consist", "TieConsist"}, ss.targetNames()...)...))
 
 	lays := net.LayersByType(axon.SuperLayer, axon.CTLayer, axon.InputLayer, axon.TargetLayer)
 	ss.AddStatStd(axon.StatLayerActGe(ss.Stats, net, Train, Trial, Run, lays...))

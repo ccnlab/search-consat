@@ -55,3 +55,5 @@ simmer.json
 sims/**/config*.toml
 sims/onetomany/onetomany/onetomany
 sims/conflict/conflict/conflict
+sims/conflict_ff/conflict_ff/conflict_ff
+sims/conflict_rnn/conflict_rnn/conflict_rnn

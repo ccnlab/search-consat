@@ -26,6 +26,8 @@ var TrialStatDocs = map[string]string{
 	"MatchCos":    "Cosine between the output activity and the closest output pattern.",
 	"Slot0":       "On tied conflict trials (two input groups with equal evidence) with a choice of one of them: 1 if it is the group in slot 0. 0.5 = no slot bias.",
 	"RepeatPrev":  "On tied conflict trials (two input groups with equal evidence) with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats the previous one. 0.5 = no carryover bias.",
+	"Consist":     "Test only: the consistency of the choice for the same conflict item across its repetitions: the proportion of repetitions with its most common choice (Blend counts as a choice), averaged over the conflict items. 1 = the same choice every time.",
+	"TieConsist":  "Test only: Consist for the tied items (equal evidence for the two groups): 1 = the same choice every time, 0.5 = a coin flip.",
 	"AbsDiff":     "Mean across target probabilities of the absolute difference between the measured probability (P<target>) and the target.",
 }
 
@@ -202,4 +204,70 @@ func (ev *CFEnv) TrialStats(out []float32, ts *TrialStats) {
 		}
 	}
 	ev.PrevChoice = ts.Choice
+	if ev.IsTest && ev.Counts != nil && ev.Ctr >= 0 {
+		idx := ev.Items[ev.Order[ev.Ctr]]
+		c := ev.Counts[idx]
+		if c == nil {
+			c = make([]int, cfg.NGroups+1)
+			ev.Counts[idx] = c
+		}
+		c[ts.Choice+1]++
+	}
+}
+
+// ItemConsistency returns the consistency of the choices for the same
+// test item across its repetitions in the current test, combining the
+// counts of the given test envs: for each item, the proportion of its
+// repetitions that produced its most common choice (with Blend as one of
+// the choices), averaged over the conflict items (consist), and over only
+// the tied items (ties). 1 = the same choice every time (deterministic
+// for each item); for ties, 0.5 = a coin flip between the two groups.
+// NaN if there are no such items.
+func ItemConsistency(envs ...*CFEnv) (consist, ties float64) {
+	if len(envs) == 0 {
+		return math.NaN(), math.NaN()
+	}
+	sp := envs[0].Space()
+	counts := map[int][]int{}
+	for _, ev := range envs {
+		for idx, c := range ev.Counts {
+			if counts[idx] == nil {
+				counts[idx] = make([]int, len(c))
+			}
+			for i, n := range c {
+				counts[idx][i] += n
+			}
+		}
+	}
+	var sum, tsum float64
+	var n, tn int
+	for idx, c := range counts {
+		it := sp.Test[idx]
+		if it.NConflict == 0 {
+			continue
+		}
+		tot, mx := 0, 0
+		for _, k := range c {
+			tot += k
+			mx = max(mx, k)
+		}
+		if tot == 0 {
+			continue
+		}
+		p := float64(mx) / float64(tot)
+		sum += p
+		n++
+		if it.IsTie() {
+			tsum += p
+			tn++
+		}
+	}
+	consist, ties = math.NaN(), math.NaN()
+	if n > 0 {
+		consist = sum / float64(n)
+	}
+	if tn > 0 {
+		ties = tsum / float64(tn)
+	}
+	return
 }

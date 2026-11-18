@@ -15,7 +15,7 @@ var LayerParams = axon.LayerSheets{
 				ly.Inhib.ActAvg.AdaptRate = 0.1
 				ly.Inhib.ActAvg.AdaptMax = 0.05
 				ly.Learn.TrgAvgAct.SynScaleRate = 0.0002 // 0.005 default; 0.0002 better!
-				ly.Acts.Noise.On.SetBool(true)
+				ly.Acts.Noise.On.SetBool(false)
 				ly.Acts.Noise.Ge = 0.01 // 0.02 starts to degrade
 				ly.Acts.Noise.Gi = 0.01
 				// ly.Acts.Decay.GBuffs.SetBool(true) // no diff?

@@ -346,7 +346,9 @@ func (ss *Sim) ConfigLoops() {
 			ss.TestAll()
 		}
 	})
-	ls.Loop(Train, Run).OnEnd.Add("FinalTest", ss.TestAll)
+	if ss.Config.Run.TestInterval == 0 {
+		ls.Loop(Train, Run).OnEnd.Add("FinalTest", ss.TestAll)
+	}
 
 	ls.AddOnStartToAll("StatsStart", ss.StatsStart)
 	ls.AddOnEndToAll("StatsStep", ss.StatsStep)

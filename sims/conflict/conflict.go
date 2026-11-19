@@ -203,6 +203,7 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	hs := pc.HiddenSize
 
 	inp := net.AddLayer4D("Input", axon.InputLayer, 1, cfg.NSlots, ps, ps).AddClass("Input")
+	out := net.AddLayer2D("Output", axon.TargetLayer, cfg.NPerOutput, cfg.NGroups).AddClass("Target")
 
 	// Encoder layers: one pool per slot, with pool-to-pool connections.
 	p1to1 := paths.NewPoolOneToOne()
@@ -238,7 +239,6 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 		prev = hid
 	}
 
-	out := net.AddLayer2D("Output", axon.TargetLayer, cfg.NPerOutput, cfg.NGroups).AddClass("Target")
 	out.PlaceAbove(prev)
 	if prev == inp {
 		net.ConnectLayers(inp, out, full, axon.ForwardPath)

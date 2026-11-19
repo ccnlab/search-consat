@@ -79,7 +79,7 @@ var PathParams = axon.PathSheets{
 			}},
 		{Sel: ".BackPath", Doc: "top-down back-pathways MUST have lower relative weight scale, otherwise network hallucinates",
 			Set: func(pt *axon.PathParams) {
-				pt.PathScale.Rel = 0.2
+				pt.PathScale.Rel = 0.1
 			}},
 		{Sel: ".LateralPath", Doc: "lateral connections within the hidden layers and Output (if Lateral, OutputLateral)",
 			Set: func(pt *axon.PathParams) {

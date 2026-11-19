@@ -25,7 +25,7 @@ type ParamConfig struct {
 	// above the Input, each with one pool per input slot and pool-to-pool
 	// (one-to-one) connections: Forward from the Input, and bidirectional
 	// between encoder layers. 0 = none.
-	NEncoder int `default:"1" min:"0"`
+	NEncoder int `default:"2" min:"0"`
 
 	// NHidden is the number of hidden layers (Hidden1, ...), fully connected
 	// bidirectionally in a stack above the encoders (or the Input),
@@ -44,21 +44,21 @@ type ParamConfig struct {
 	EncoderLateral bool
 
 	// Lateral adds full lateral (self) connections within each hidden layer.
-	Lateral bool
+	HiddenLateral bool
 
 	// OutputLateral adds full lateral (self) connections within the Output layer.
-	OutputLateral bool
+	OutputLateral bool `default:"true"`
 
 	// Shortcut adds full Forward connections from the last encoder layer to
 	// the Output, bypassing the hidden layers (class Shortcut). Only used
 	// if there are encoder and hidden layers (otherwise the last encoder is
 	// connected to the Output anyway).
-	Shortcut bool
+	Shortcut bool `default:"true"`
 
 	// EncoderBack adds full Back connections from the Output to the last
 	// encoder layer (class EncoderBack, also BackPath), with Shortcut or
 	// without. Only used if there are encoder and hidden layers.
-	EncoderBack bool
+	EncoderBack bool `default:"true"`
 
 	// TestSynFail resamples the random synaptic failures (Com.PFail) after each
 	// testing trial, without any learning or slow adaptation (Network.SynFail),

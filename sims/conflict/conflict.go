@@ -232,7 +232,7 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 		} else {
 			net.BidirConnectLayers(prev, hid, full)
 		}
-		if pc.Lateral {
+		if pc.HiddenLateral {
 			net.LateralConnectLayer(hid, full)
 		}
 		prev = hid

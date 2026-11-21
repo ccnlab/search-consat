@@ -67,9 +67,11 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 	inTargs := ss.inTargetNames()
 	names = append(names, inTargs...)
 	names = append(names, "InAbsDiff")
+	names = append(names, cfenv.MatchNames...)
 	slotNms := append([]string{"Slot0"}, ss.slotNames()...)
 	names = append(names, slotNms[1:]...)
 	names = append(names, "SlotRange")
+	matchCenter, matchExtreme := cfenv.MatchPairs(ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).Space().Targets)
 	pcts := make([]float64, len(targs))
 	for i, nm := range targs {
 		p, _ := strconv.Atoi(nm[1:])
@@ -96,6 +98,8 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 					switch name {
 					case "P100", "AbsDiff", "Blend", "Intrusion":
 						s.On = true
+					case "MatchCenter", "MatchExtreme":
+						s.Range.SetMax(2)
 					}
 					if mode == Test && (name[0] == 'P' || strings.HasPrefix(name, "In")) {
 						s.On = true
@@ -128,7 +132,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				vals := append(ts.Values(), ts.Probs...)
 				vals = append(vals, math.NaN())
 				vals = append(vals, ts.InProbs...)
-				vals = append(vals, math.NaN())
+				vals = append(vals, math.NaN(), math.NaN(), math.NaN())
 				vals = append(vals, ts.Slots[1:]...)
 				vals = append(vals, math.NaN())
 				for i, stat := range vals {
@@ -143,7 +147,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				sf = stats.StatFinal
 			}
 			for _, name := range names {
-				if (name == "AbsDiff" || name == "InAbsDiff" || name == "SlotRange") && level != Run {
+				if (name == "AbsDiff" || name == "InAbsDiff" || name == "MatchCenter" || name == "MatchExtreme" || name == "SlotRange") && level != Run {
 					continue
 				}
 				levelDir.Float64(name).AppendRowFloat(sf.Call(subDir.Value(name)).Float1D(0))
@@ -168,6 +172,16 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 			}
 			levelDir.Float64("AbsDiff").AppendRowFloat(absDiff(targs))
 			levelDir.Float64("InAbsDiff").AppendRowFloat(absDiff(inTargs))
+			slope := func(pct int) float64 {
+				if pct == 0 {
+					return math.NaN()
+				}
+				hi := levelDir.Float64(cfenv.InTargetName(pct)).Float1D(-1)
+				lo := levelDir.Float64(cfenv.InTargetName(100 - pct)).Float1D(-1)
+				return cfenv.MatchSlope(hi, lo, pct)
+			}
+			levelDir.Float64("MatchCenter").AppendRowFloat(slope(matchCenter))
+			levelDir.Float64("MatchExtreme").AppendRowFloat(slope(matchExtreme))
 			mn, mx := math.Inf(1), math.Inf(-1)
 			for _, nm := range slotNms {
 				v := levelDir.Float64(nm).Float1D(-1)
@@ -357,5 +371,369 @@ func (ss *Sim) StatConsist() func(mode Modes, level Levels, start bool) {
 		c, t := cfenv.ItemConsistency(envs...)
 		levelDir.Float64("Consist").AppendRowFloat(c)
 		levelDir.Float64("TieConsist").AppendRowFloat(t)
+	}
+}
+
+// carryNames returns the names of the StatCarry stats: <Layer>_CarryEnd
+// for every layer, including Input, whose carryover should be ~0 (its
+// state is clamped), as a check on the baseline.
+func (ss *Sim) carryNames() []string {
+	var names []string
+	for _, ly := range ss.Net.Layers {
+		names = append(names, ly.Name+"_CarryEnd")
+	}
+	return names
+}
+
+// StatCarry returns the stats function for the carryover of each layer's
+// state from the previous trial, as <Layer>_CarryEnd: the cosine between
+// the layer's final activity (Act, at the end of settling) on the current
+// trial and on the previous trial of the same data-parallel stream, minus
+// the mean cosine with the previous activity of the other streams. The
+// other streams run independent random sequences through the same
+// network, so this baseline has the same expected input overlap and
+// shared representational structure, without the carryover: 0 = no
+// carryover beyond that expected from the inputs. This matches the axon
+// model's _CarryEnd stats; there is no _CarryMid, as only the final
+// cycle's activity is available. The previous activity is what starts
+// the next trial (times 1 - Decay), but the stat is computed for any
+// Decay, so Decay = 1 is the no-carryover control.
+// NaN for the first trial of a run, and with NData < 2. The previous
+// state carries across Train and Test, as it does in the network.
+// Averaged over trials above the Trial level.
+func (ss *Sim) StatCarry() func(mode Modes, level Levels, start bool) {
+	lays := ss.Net.Layers
+	names := ss.carryNames()
+	vi, _ := egomlx.NeuronVarIndexByName("Act")
+	var prev [][][]float32 // [layer][di] previous Act
+	var cur []float32
+	return func(mode Modes, level Levels, start bool) {
+		if level <= Cycle {
+			return
+		}
+		modeDir := ss.Stats.Dir(mode.String())
+		curModeDir := ss.Current.Dir(mode.String())
+		levelDir := modeDir.Dir(level.String())
+		subDir := modeDir.Dir((level - 1).String())
+		if start {
+			if mode == Train && level == Run {
+				prev = nil // new weights and state
+			}
+			for _, name := range names {
+				tsr := levelDir.Float64(name)
+				tsr.SetNumRows(0)
+				plot.SetFirstStyler(tsr, func(s *plot.Style) {
+					s.On = false
+				})
+				metadata.SetDoc(tsr, "Carryover of the layer's state from the previous trial: cosine of the final activity (Act) with that of the previous trial in the same data-parallel stream, minus the mean cosine with the previous activity of the other streams (the baseline for the input overlap). 0 = no carryover.")
+			}
+			return
+		}
+		if level == Trial {
+			ndata := ss.Net.NData
+			if len(prev) != len(lays) || len(prev[0]) != ndata {
+				prev = make([][][]float32, len(lays))
+				for li := range prev {
+					prev[li] = make([][]float32, ndata)
+				}
+			}
+			for li, ly := range lays {
+				for di := range ndata {
+					cur = layerValues(ly, vi, di, cur)
+					v := carryover(cur, prev[li], di)
+					curModeDir.Float64(names[li], ndata).SetFloat1D(v, di)
+					levelDir.Float64(names[li]).AppendRowFloat(v)
+				}
+				for di := range ndata {
+					prev[li][di] = layerValues(ly, vi, di, prev[li][di])
+				}
+			}
+			return
+		}
+		sf := stats.StatMean
+		if level == Run {
+			sf = stats.StatFinal
+		}
+		for _, name := range names {
+			levelDir.Float64(name).AppendRowFloat(sf.Call(subDir.Value(name)).Float1D(0))
+		}
+	}
+}
+
+// carryover returns the cosine of cur with prev[di] minus the mean cosine
+// of cur with the other prev values (see [Sim.StatCarry]).
+// NaN if any prev is missing or there is only one.
+func carryover(cur []float32, prev [][]float32, di int) float64 {
+	if len(prev) < 2 {
+		return math.NaN()
+	}
+	var base float64
+	for d, p := range prev {
+		if len(p) != len(cur) {
+			return math.NaN()
+		}
+		if d != di {
+			base += float64(cfenv.Cosine(cur, p))
+		}
+	}
+	base /= float64(len(prev) - 1)
+	return float64(cfenv.Cosine(cur, prev[di])) - base
+}
+
+// competePhaseCycles is the number of cycles of the axon minus phase
+// that the rnn settling cycles are mapped onto for the competition and
+// microscope stats, so that their cycle values (CommitCyc, Agree50, ...)
+// are on the same time scale as in the axon model.
+const competePhaseCycles = 150
+
+// cycleInterval returns the number of axon minus phase cycles per rnn
+// settling cycle: competePhaseCycles / NCycles, rounded (15 for 10
+// cycles). Settling cycle c (0-based) is at cycle (c+1) * cycleInterval.
+func (ss *Sim) cycleInterval() int {
+	return max(1, int(math.Round(competePhaseCycles/float64(max(ss.Config.Params.NCycles, 1)))))
+}
+
+// StatCompete returns the stats function for the within-trial
+// competition between the two input groups on test conflict trials,
+// as in the axon model, from the summed Output Act of each group on each
+// settling cycle (egomlx Layer.CycleActs): LeadSwaps, CommitCyc,
+// LoserFrac, AltCorr, Agree50, Agree100, and LeadSwaps and CommitCyc
+// split by minority versus majority choice (see [cfenv.CFEnv.Compete]
+// and [cfenv.TrialStatDocs]). The cycles are mapped onto the 150-cycle
+// axon minus phase ([Sim.cycleInterval]). The choice is the one
+// computed by StatOutput, which must run first. Averaged over trials
+// above the Trial level (NaN trials are left out).
+func (ss *Sim) StatCompete() func(mode Modes, level Levels, start bool) {
+	names := cfenv.CompeteNames
+	var cs cfenv.CompeteStats
+	var vals []float32
+	var drive [][]float32
+	return func(mode Modes, level Levels, start bool) {
+		if mode != Test || level <= Cycle {
+			return
+		}
+		modeDir := ss.Stats.Dir(mode.String())
+		curModeDir := ss.Current.Dir(mode.String())
+		levelDir := modeDir.Dir(level.String())
+		subDir := modeDir.Dir((level - 1).String())
+		if start {
+			for _, name := range names {
+				tsr := levelDir.Float64(name)
+				tsr.SetNumRows(0)
+				plot.SetFirstStyler(tsr, func(s *plot.Style) {
+					s.Plot.Plotter = "Bar"
+					s.Plot.XAxis.Column = "TrainEpoch"
+					switch name {
+					case "LeadSwaps", "LoserFrac", "AltCorr":
+						s.On = true
+					}
+				})
+				metadata.SetDoc(tsr, cfenv.TrialStatDocs[name])
+			}
+			return
+		}
+		if level == Trial {
+			ndata := ss.Net.NData
+			ncyc := max(ss.Config.Params.NCycles, 1)
+			outLy := ss.Net.LayerByName("Output")
+			if len(drive) != ncyc {
+				drive = make([][]float32, ncyc)
+			}
+			for di := range ndata {
+				ev := ss.Envs.ByModeDi(Test, di).(*cfenv.CFEnv)
+				ok := true
+				for c := range ncyc {
+					vals = outLy.CycleAct(c, di, vals)
+					if vals == nil {
+						ok = false
+						break
+					}
+					drive[c] = ev.GroupSums(vals, drive[c])
+				}
+				if ok {
+					// PrevChoice is this trial's choice, after StatOutput
+					ev.Compete(drive, ss.cycleInterval(), ev.PrevChoice, &cs)
+				} else {
+					ev.Compete(nil, 1, -1, &cs)
+				}
+				for i, v := range cs.Values() {
+					curModeDir.Float64(names[i], ndata).SetFloat1D(v, di)
+					levelDir.Float64(names[i]).AppendRowFloat(v)
+				}
+			}
+			return
+		}
+		for _, name := range names {
+			levelDir.Float64(name).AppendRowFloat(stats.StatMean.Call(subDir.Value(name)).Float1D(0))
+		}
+	}
+}
+
+// microNames returns the names of the StatMicroscope trajectory columns
+// after the layers: the cosine of the Output with the pattern of the
+// chosen (Win) and the other (Lose) input group, on all conflict trials
+// with a choice of an input group, and split by minority versus majority
+// choice on unequal trials (the split ones only for the epoch average).
+func microNames(split bool) []string {
+	nms := []string{"OutWin", "OutLose"}
+	if split {
+		nms = append(nms, "OutWinMinor", "OutLoseMinor", "OutWinMajor", "OutLoseMajor")
+	}
+	return nms
+}
+
+// StatMicroscope returns the stats function for the settling trajectory
+// "microscope", as in the axon model (O'Reilly, Wyatte, Herd et al.,
+// 2013): from the Act of each non-input layer on each settling cycle
+// (egomlx Layer.CycleActs), the cosine of each layer's activity on each
+// cycle with its final activity, and the cosine of the Output activity
+// with the output patterns of the chosen and the other input group
+// (OutWin, OutLose). The Cycle column is mapped onto the 150-cycle axon
+// minus phase ([Sim.cycleInterval]). Test/MicroscopeTrial has the
+// trajectories of the current trial for data-parallel stream 0, and
+// Test/Microscope their average over the trials of the current test,
+// with the layer columns over all the trials and the Out columns over
+// the conflict trials with a choice of an input group, also split by
+// minority versus majority choice.
+func (ss *Sim) StatMicroscope() func(mode Modes, level Levels, start bool) {
+	iv := ss.cycleInterval()
+	nsamp := max(ss.Config.Params.NCycles, 1)
+	lays := ss.Net.OutputLayers // the non-input layers
+	var lnames []string
+	for _, ly := range lays {
+		lnames = append(lnames, ly.Name)
+	}
+	avgNames := append(append([]string{}, lnames...), microNames(true)...)
+	trlNames := append(append([]string{}, lnames...), microNames(false)...)
+	sums := make([][]float64, len(avgNames))
+	ns := make([][]float64, len(avgNames))
+	for i := range avgNames {
+		sums[i] = make([]float64, nsamp)
+		ns[i] = make([]float64, nsamp)
+	}
+	col := map[string]int{}
+	for i, nm := range avgNames {
+		col[nm] = i
+	}
+	config := func(dir string, names []string) {
+		d := ss.Stats.Dir("Test").Dir(dir)
+		cyc := d.Float64("Cycle", nsamp)
+		plot.SetFirstStyler(cyc, func(s *plot.Style) { s.Role = plot.X })
+		for i := range nsamp {
+			cyc.SetFloat1D(float64((i+1)*iv), i)
+		}
+		for _, nm := range names {
+			tsr := d.Float64(nm, nsamp)
+			plot.SetFirstStyler(tsr, func(s *plot.Style) {
+				s.Range.SetMin(0).SetMax(1)
+				switch nm {
+				case "OutWin", "OutLose", "OutWinMinor", "OutLoseMinor", "Hidden1", "Output":
+					s.On = true
+				}
+			})
+			switch {
+			case strings.HasPrefix(nm, "OutWin"):
+				metadata.SetDoc(tsr, "Cosine of the Output activity with the output pattern of the chosen input group, over settling cycles.")
+			case strings.HasPrefix(nm, "OutLose"):
+				metadata.SetDoc(tsr, "Cosine of the Output activity with the output pattern of the other (not chosen) input group, over settling cycles.")
+			default:
+				metadata.SetDoc(tsr, "Cosine of the layer activity with its final activity on the last settling cycle, over settling cycles.")
+			}
+		}
+	}
+	add := func(nm string, s int, v float64) {
+		if math.IsNaN(v) {
+			return
+		}
+		sums[col[nm]][s] += v
+		ns[col[nm]][s]++
+	}
+	var acts [][]float32
+	var final []float32
+	return func(mode Modes, level Levels, start bool) {
+		if mode != Test || level <= Cycle {
+			return
+		}
+		if start {
+			if level == Trial { // start of a test
+				config("Microscope", avgNames)
+				config("MicroscopeTrial", trlNames)
+				for i := range sums {
+					clear(sums[i])
+					clear(ns[i])
+				}
+			}
+			return
+		}
+		if level == Epoch {
+			avgDir := ss.Stats.Dir("Test/Microscope")
+			for i, nm := range avgNames {
+				tsr := avgDir.Float64(nm, nsamp)
+				for s := range nsamp {
+					v := math.NaN()
+					if ns[i][s] > 0 {
+						v = sums[i][s] / ns[i][s]
+					}
+					tsr.SetFloat1D(v, s)
+				}
+			}
+			return
+		}
+		if level != Trial {
+			return
+		}
+		trlDir := ss.Stats.Dir("Test/MicroscopeTrial")
+		sp := ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).Space()
+		outLy := ss.Net.LayerByName("Output")
+		if len(acts) != nsamp {
+			acts = make([][]float32, nsamp)
+		}
+		for di := range ss.Net.NData {
+			for li, ly := range lays {
+				final = ly.CycleAct(nsamp-1, di, final)
+				if final == nil {
+					return
+				}
+				for s := range nsamp {
+					acts[s] = ly.CycleAct(s, di, acts[s])
+					v := float64(cfenv.Cosine(acts[s], final))
+					add(lnames[li], s, v)
+					if di == 0 {
+						trlDir.Float64(lnames[li], nsamp).SetFloat1D(v, s)
+					}
+				}
+			}
+			ev := ss.Envs.ByModeDi(Test, di).(*cfenv.CFEnv)
+			it, choice := ev.Cur, ev.PrevChoice // PrevChoice is this trial's, after StatOutput
+			ci := -1
+			if it != nil && len(it.Groups) == 2 {
+				ci = it.GroupIndex(choice)
+			}
+			split := ""
+			if ci >= 0 && !it.IsTie() {
+				split = "Major"
+				if ci == 1 {
+					split = "Minor"
+				}
+			}
+			for s := range nsamp {
+				win, lose := math.NaN(), math.NaN()
+				if ci >= 0 {
+					acts[s] = outLy.CycleAct(s, di, acts[s])
+					win = float64(cfenv.Cosine(acts[s], sp.Outputs.SubSpace(it.Groups[ci]).(*tensor.Float32).Values))
+					lose = float64(cfenv.Cosine(acts[s], sp.Outputs.SubSpace(it.Groups[1-ci]).(*tensor.Float32).Values))
+					add("OutWin", s, win)
+					add("OutLose", s, lose)
+					if split != "" {
+						add("OutWin"+split, s, win)
+						add("OutLose"+split, s, lose)
+					}
+				}
+				if di == 0 {
+					trlDir.Float64("OutWin", nsamp).SetFloat1D(win, s)
+					trlDir.Float64("OutLose", nsamp).SetFloat1D(lose, s)
+				}
+			}
+		}
 	}
 }

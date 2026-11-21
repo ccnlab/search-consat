@@ -43,7 +43,7 @@ type ParamConfig struct {
 	// each encoder layer (pool one-to-one).
 	EncoderLateral bool
 
-	// Lateral adds full lateral (self) connections within each hidden layer.
+	// HiddenLateral adds full lateral (self) connections within each hidden layer.
 	HiddenLateral bool
 
 	// OutputLateral adds full lateral (self) connections within the Output layer.
@@ -147,6 +147,19 @@ type RunConfig struct {
 	// PCAInterval is how often (in epochs) to compute PCA on hidden
 	// representations to measure variance.
 	PCAInterval int `default:"10"`
+
+	// CompeteInterval is how often (in cycles) to sample the summed
+	// Output CaM of each group during the minus phase of test trials,
+	// for the within-trial competition stats (LeadSwaps, CommitCyc, ...;
+	// see StatCompete). 0 = off. On the GPU, each sample copies the
+	// neuron state back from the GPU.
+	CompeteInterval int `default:"5"`
+
+	// Microscope records the Act of every layer at each competition
+	// sample (every CompeteInterval cycles of the test minus phase), for
+	// the settling trajectory plots (Test Microscope and Test
+	// MicroscopeTrial tabs; see StatMicroscope). Needs CompeteInterval > 0.
+	Microscope bool `default:"true"`
 
 	// StartWeights is the name of weights file to load at start of first run.
 	StartWeights string

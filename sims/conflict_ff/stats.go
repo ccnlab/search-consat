@@ -67,9 +67,11 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 	inTargs := ss.inTargetNames()
 	names = append(names, inTargs...)
 	names = append(names, "InAbsDiff")
+	names = append(names, cfenv.MatchNames...)
 	slotNms := append([]string{"Slot0"}, ss.slotNames()...)
 	names = append(names, slotNms[1:]...)
 	names = append(names, "SlotRange")
+	matchCenter, matchExtreme := cfenv.MatchPairs(ss.Envs.ByModeDi(Test, 0).(*cfenv.CFEnv).Space().Targets)
 	pcts := make([]float64, len(targs))
 	for i, nm := range targs {
 		p, _ := strconv.Atoi(nm[1:])
@@ -96,6 +98,8 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 					switch name {
 					case "P100", "AbsDiff", "Blend", "Intrusion":
 						s.On = true
+					case "MatchCenter", "MatchExtreme":
+						s.Range.SetMax(2)
 					}
 					if mode == Test && (name[0] == 'P' || strings.HasPrefix(name, "In")) {
 						s.On = true
@@ -128,7 +132,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				vals := append(ts.Values(), ts.Probs...)
 				vals = append(vals, math.NaN())
 				vals = append(vals, ts.InProbs...)
-				vals = append(vals, math.NaN())
+				vals = append(vals, math.NaN(), math.NaN(), math.NaN())
 				vals = append(vals, ts.Slots[1:]...)
 				vals = append(vals, math.NaN())
 				for i, stat := range vals {
@@ -143,7 +147,7 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 				sf = stats.StatFinal
 			}
 			for _, name := range names {
-				if (name == "AbsDiff" || name == "InAbsDiff" || name == "SlotRange") && level != Run {
+				if (name == "AbsDiff" || name == "InAbsDiff" || name == "MatchCenter" || name == "MatchExtreme" || name == "SlotRange") && level != Run {
 					continue
 				}
 				levelDir.Float64(name).AppendRowFloat(sf.Call(subDir.Value(name)).Float1D(0))
@@ -168,6 +172,16 @@ func (ss *Sim) StatOutput() func(mode Modes, level Levels, start bool) {
 			}
 			levelDir.Float64("AbsDiff").AppendRowFloat(absDiff(targs))
 			levelDir.Float64("InAbsDiff").AppendRowFloat(absDiff(inTargs))
+			slope := func(pct int) float64 {
+				if pct == 0 {
+					return math.NaN()
+				}
+				hi := levelDir.Float64(cfenv.InTargetName(pct)).Float1D(-1)
+				lo := levelDir.Float64(cfenv.InTargetName(100 - pct)).Float1D(-1)
+				return cfenv.MatchSlope(hi, lo, pct)
+			}
+			levelDir.Float64("MatchCenter").AppendRowFloat(slope(matchCenter))
+			levelDir.Float64("MatchExtreme").AppendRowFloat(slope(matchExtreme))
 			mn, mx := math.Inf(1), math.Inf(-1)
 			for _, nm := range slotNms {
 				v := levelDir.Float64(nm).Float1D(-1)
@@ -358,4 +372,107 @@ func (ss *Sim) StatConsist() func(mode Modes, level Levels, start bool) {
 		levelDir.Float64("Consist").AppendRowFloat(c)
 		levelDir.Float64("TieConsist").AppendRowFloat(t)
 	}
+}
+
+// carryNames returns the names of the StatCarry stats: <Layer>_CarryEnd
+// for every layer, including Input, whose carryover should be ~0 (its
+// state is clamped), as a check on the baseline.
+func (ss *Sim) carryNames() []string {
+	var names []string
+	for _, ly := range ss.Net.Layers {
+		names = append(names, ly.Name+"_CarryEnd")
+	}
+	return names
+}
+
+// StatCarry returns the stats function for the carryover of each layer's
+// state from the previous trial, as <Layer>_CarryEnd: the cosine between
+// the layer's activity (Act) on the current trial and on the previous
+// trial of the same data-parallel stream, minus the mean cosine with the
+// previous activity of the other streams. The other streams run
+// independent random sequences through the same network, so this
+// baseline has the same expected input overlap and shared
+// representational structure, without the carryover: 0 = no carryover
+// beyond that expected from the inputs. This matches the axon and rnn
+// models' _CarryEnd stats. The feedforward network has no state that
+// carries over between trials, so this is a control: it should be ~0.
+// NaN for the first trial of a run, and with NData < 2.
+// Averaged over trials above the Trial level.
+func (ss *Sim) StatCarry() func(mode Modes, level Levels, start bool) {
+	lays := ss.Net.Layers
+	names := ss.carryNames()
+	vi, _ := egomlx.NeuronVarIndexByName("Act")
+	var prev [][][]float32 // [layer][di] previous Act
+	var cur []float32
+	return func(mode Modes, level Levels, start bool) {
+		if level <= Cycle {
+			return
+		}
+		modeDir := ss.Stats.Dir(mode.String())
+		curModeDir := ss.Current.Dir(mode.String())
+		levelDir := modeDir.Dir(level.String())
+		subDir := modeDir.Dir((level - 1).String())
+		if start {
+			if mode == Train && level == Run {
+				prev = nil // new weights and state
+			}
+			for _, name := range names {
+				tsr := levelDir.Float64(name)
+				tsr.SetNumRows(0)
+				plot.SetFirstStyler(tsr, func(s *plot.Style) {
+					s.On = false
+				})
+				metadata.SetDoc(tsr, "Carryover of the layer's state from the previous trial: cosine of the activity (Act) with that of the previous trial in the same data-parallel stream, minus the mean cosine with the previous activity of the other streams (the baseline for the input overlap). 0 = no carryover.")
+			}
+			return
+		}
+		if level == Trial {
+			ndata := ss.Net.NData
+			if len(prev) != len(lays) || len(prev[0]) != ndata {
+				prev = make([][][]float32, len(lays))
+				for li := range prev {
+					prev[li] = make([][]float32, ndata)
+				}
+			}
+			for li, ly := range lays {
+				for di := range ndata {
+					cur = layerValues(ly, vi, di, cur)
+					v := carryover(cur, prev[li], di)
+					curModeDir.Float64(names[li], ndata).SetFloat1D(v, di)
+					levelDir.Float64(names[li]).AppendRowFloat(v)
+				}
+				for di := range ndata {
+					prev[li][di] = layerValues(ly, vi, di, prev[li][di])
+				}
+			}
+			return
+		}
+		sf := stats.StatMean
+		if level == Run {
+			sf = stats.StatFinal
+		}
+		for _, name := range names {
+			levelDir.Float64(name).AppendRowFloat(sf.Call(subDir.Value(name)).Float1D(0))
+		}
+	}
+}
+
+// carryover returns the cosine of cur with prev[di] minus the mean cosine
+// of cur with the other prev values (see [Sim.StatCarry]).
+// NaN if any prev is missing or there is only one.
+func carryover(cur []float32, prev [][]float32, di int) float64 {
+	if len(prev) < 2 {
+		return math.NaN()
+	}
+	var base float64
+	for d, p := range prev {
+		if len(p) != len(cur) {
+			return math.NaN()
+		}
+		if d != di {
+			base += float64(cfenv.Cosine(cur, p))
+		}
+	}
+	base /= float64(len(prev) - 1)
+	return float64(cfenv.Cosine(cur, prev[di])) - base
 }

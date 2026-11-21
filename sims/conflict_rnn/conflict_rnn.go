@@ -36,6 +36,7 @@ import (
 	"github.com/emer/emergent/v2/egui"
 	"github.com/emer/emergent/v2/env"
 	"github.com/emer/emergent/v2/looper"
+	"github.com/emer/emergent/v2/netview"
 	"github.com/emer/emergent/v2/paths"
 )
 
@@ -144,7 +145,7 @@ func (ss *Sim) ConfigSim() {
 	ss.Root, _ = tensorfs.NewDir("Root")
 	tensorfs.CurRoot = ss.Root
 	ss.Net = egomlx.NewNetwork(ss.Config.Name)
-	ss.Params.Config(NetworkParams, LayerParams, PathParams, ss.Config.Params.Sheet, ss.Config.Params.Tag, "github.com/ccnlab/search-consat/sims/conflict_rnn", reflect.ValueOf(ss))
+	ss.configParams()
 	ss.RandSeeds.Init(100) // max 100 runs
 	ss.InitRandSeed(0)
 	ss.ConfigEnv()
@@ -158,23 +159,49 @@ func (ss *Sim) ConfigSim() {
 	}
 }
 
-// ConfigEnv configures the train and test environments: one per
-// data-parallel index, exactly as in the axon conflict model.
-func (ss *Sim) ConfigEnv() {
-	// Can be called multiple times -- don't re-create
-	newEnv := (len(ss.Envs) == 0)
+func (ss *Sim) configParams() {
+	ss.Params.Config(NetworkParams, LayerParams, PathParams, ss.Config.Params.Sheet, ss.Config.Params.Tag, "github.com/ccnlab/search-consat/sims/conflict_rnn", reflect.ValueOf(ss))
+}
 
+// ReConfig applies the current Config to the sim, as the Config button
+// does: it makes new environments, a new network (with new weights,
+// releasing the compute backend of the old one), loops, and stats
+// (deleting all the data in Root, so all stats data is reset), and
+// then calls Init. Config.GUI cannot be changed this way.
+func (ss *Sim) ReConfig() {
+	errors.Log(ss.Root.DeleteAll())
+	ss.configParams()
+	old := ss.Net
+	ss.Net = egomlx.NewNetwork(ss.Config.Name)
+	ss.InitRandSeed(0)
+	ss.ConfigEnv()
+	ss.ConfigNet(ss.Net)
+	if old.Backend != nil {
+		old.Backend.Finalize()
+	}
+	ss.ConfigLoops()
+	ss.ConfigStats()
+	if ss.GUI.Active {
+		ss.configNetView(ss.GUI.NetViews[0])
+		ss.GUI.UpdateFiles()
+	}
+	ss.Init()
+	if ss.GUI.Active {
+		ss.GUI.Toolbar.Update() // the looper controls show the loops' step settings
+		ss.GUI.UpdateWindow()
+	}
+}
+
+// ConfigEnv configures the train and test environments: one per
+// data-parallel index, exactly as in the axon conflict model,
+// replacing any existing ones (see [Sim.ReConfig]).
+func (ss *Sim) ConfigEnv() {
+	ss.Envs = env.Envs{}
 	ndata := ss.Config.Run.NData
 
 	for di := range ndata {
-		var trn, tst *cfenv.CFEnv
-		if newEnv {
-			trn = &cfenv.CFEnv{}
-			tst = &cfenv.CFEnv{}
-		} else {
-			trn = ss.Envs.ByModeDi(Train, di).(*cfenv.CFEnv)
-			tst = ss.Envs.ByModeDi(Test, di).(*cfenv.CFEnv)
-		}
+		trn := &cfenv.CFEnv{}
+		tst := &cfenv.CFEnv{}
 
 		// note: names must be standard here!
 		trn.Name = env.ModeDi(Train, di)
@@ -288,6 +315,7 @@ func (ss *Sim) ApplyParams() {
 	ss.Params.ApplyAll(ss.Net)
 	pc := &ss.Config.Params
 	ss.Net.Params.NCycles = pc.NCycles
+	ss.Net.RecordCycles = ss.Config.Run.RecordCycles && pc.NCycles > 1
 	ss.Net.Params.Decay = pc.Decay
 	if pc.WeightDecay > 0 {
 		ss.Net.Params.Optim = egomlx.AdamW
@@ -331,9 +359,12 @@ func (ss *Sim) NetViewUpdater(mode enums.Enum) *egomlx.NetViewUpdate {
 	return &ss.TestUpdate
 }
 
-// ConfigLoops configures the control loops: Training, Testing
+// ConfigLoops configures the control loops: Training, Testing.
+// When called again (see [Sim.ReConfig]), it recycles the existing
+// ss.Loops, keeping the step settings of the GUI.
 func (ss *Sim) ConfigLoops() {
-	ls := looper.NewStacks()
+	ls, prev := looper.RecycleStacks(ss.Loops)
+	ss.Loops = ls
 
 	trials := int(math32.IntMultipleGE(float32(ss.Config.Run.Trials), float32(ss.Config.Run.NData)))
 	cycles := ss.Config.Run.Cycles
@@ -394,7 +425,7 @@ func (ss *Sim) ConfigLoops() {
 	if ss.Config.Debug {
 		mpi.Println(ls.DocString())
 	}
-	ss.Loops = ls
+	ls.CopyStepSettings(prev)
 }
 
 // ApplyInputs applies input patterns from given environment for given mode,
@@ -504,9 +535,14 @@ func (ss *Sim) UpdatePlots(mode Modes, level Levels) {
 	nm := mode.String() + " " + level.String() + " Plot"
 	tbs.GoUpdatePlot(nm)
 	switch level {
+	case Trial:
+		if mode == Test {
+			tbs.GoUpdatePlot("Test MicroscopeTrial Plot")
+		}
 	case Epoch:
 		if mode == Test {
 			tbs.GoUpdatePlot("Test SecondRatioHist Plot")
+			tbs.GoUpdatePlot("Test Microscope Plot")
 		}
 	case Run:
 		tbs.GoUpdatePlot("Train RunAll Plot")
@@ -549,6 +585,10 @@ func (ss *Sim) StatsInit() {
 		tbs.PlotTensorFS(egomlx.StatsNode(ss.Stats, Test, Trial))
 		tbs.PlotTensorFS(ss.Stats.Dir("Train/RunAll"))
 		tbs.PlotTensorFS(ss.Stats.Dir("Test/SecondRatioHist"))
+		if ss.Config.Run.RecordCycles && ss.Config.Params.NCycles > 1 {
+			tbs.PlotTensorFS(ss.Stats.Dir("Test/Microscope"))
+			tbs.PlotTensorFS(ss.Stats.Dir("Test/MicroscopeTrial"))
+		}
 		tbs.SelectTabIndex(idx)
 	}
 }
@@ -557,6 +597,7 @@ func (ss *Sim) StatsInit() {
 // in the tensorfs system, mirroring the axon conflict stats.
 func (ss *Sim) ConfigStats() {
 	net := ss.Net
+	ss.StatFuncs = nil
 	ss.Stats = ss.Root.Dir("Stats")
 	ss.Current = ss.Stats.Dir("Current")
 
@@ -572,9 +613,15 @@ func (ss *Sim) ConfigStats() {
 	ss.AddStat(ss.StatConsist())
 	ss.PatternDistMatrix()
 	ss.AddStat(ss.StatSecondHist(10))
+	ss.AddStat(ss.StatCarry())
+	if ss.Config.Run.RecordCycles && ss.Config.Params.NCycles > 1 {
+		ss.AddStat(ss.StatCompete())
+		ss.AddStat(ss.StatTestCopy(cfenv.CompeteNames...))
+		ss.AddStat(ss.StatMicroscope())
+	}
 
 	// get test stats in train log
-	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev", "Consist", "TieConsist", "InAbsDiff", "SlotRange"}, append(append(ss.targetNames(), ss.inTargetNames()...), ss.slotNames()...)...)...))
+	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev", "MinorPrevMinor", "MinorPrevMajor", "MinorPrevOther", "Consist", "TieConsist", "InAbsDiff", "MatchCenter", "MatchExtreme", "SlotRange"}, append(append(ss.targetNames(), ss.inTargetNames()...), append(ss.slotNames(), ss.carryNames()...)...)...)...))
 
 	lays := net.LayersByType(egomlx.Hidden, egomlx.Target)
 	ss.AddStatStd(egomlx.StatLayerAct(ss.Stats, net, Train, Trial, Run, lays...))
@@ -627,11 +674,7 @@ func (ss *Sim) ConfigGUI(b tree.Node) {
 	ss.GUI.MakeBody(b, ss, ss.Root, ss.Config.Name, ss.Config.Title, ss.Config.Doc)
 	ss.GUI.StopLevel = Trial
 	nv := ss.GUI.AddNetView("Network")
-	nv.Settings.MaxRecs = 2 * ss.Config.Run.Cycles
-	nv.Settings.Raster.Max = ss.Config.Run.Cycles
-	nv.SetNet(ss.Net)
-	ss.TrainUpdate.Config(nv, egomlx.Trial, ss.StatCounters)
-	ss.TestUpdate.Config(nv, egomlx.Trial, ss.StatCounters)
+	ss.configNetView(nv)
 	ss.GUI.OnStop = func(mode, level enums.Enum) {
 		vu := ss.NetViewUpdater(mode)
 		vu.UpdateWhenStopped(mode, level)
@@ -644,11 +687,29 @@ func (ss *Sim) ConfigGUI(b tree.Node) {
 	ss.GUI.FinalizeGUI(false)
 }
 
+// configNetView configures the network view for the current network.
+func (ss *Sim) configNetView(nv *netview.NetView) {
+	nv.Settings.MaxRecs = 2 * ss.Config.Run.Cycles
+	nv.Settings.Raster.Max = ss.Config.Run.Cycles
+	nv.SetNet(ss.Net)
+	ss.TrainUpdate.Config(nv, egomlx.Trial, ss.StatCounters)
+	ss.TestUpdate.Config(nv, egomlx.Trial, ss.StatCounters)
+}
+
 // MakeToolbar makes the custom toolbar items.
 func (ss *Sim) MakeToolbar(p *tree.Plan) {
 	ss.GUI.AddLooperCtrl(p, ss.Loops)
 
 	tree.Add(p, func(w *core.Separator) {})
+	ss.GUI.AddToolbarItem(p, egui.ToolbarItem{
+		Label:   "Config",
+		Icon:    icons.Settings,
+		Tooltip: "Applies the current Config settings: makes new environments, rebuilds the network (with new weights), loops, and stats (resetting all stats data), and then does Init. GPU and GUI cannot be changed.",
+		Active:  egui.ActiveStopped,
+		Func: func() {
+			ss.ReConfig()
+		},
+	})
 	ss.GUI.AddToolbarItem(p, egui.ToolbarItem{
 		Label:   "New Seed",
 		Icon:    icons.Add,

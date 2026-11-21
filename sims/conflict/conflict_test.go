@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ccnlab/search-consat/sims/conflict/cfenv"
@@ -290,10 +291,10 @@ func TestLayerConfigs(t *testing.T) {
 	}
 	cases := []lc{
 		{nenc: 0, nhid: 0, layers: []string{"Input", "Output"}, npaths: 1},
-		{nenc: 0, nhid: 1, layers: []string{"Input", "Hidden1", "Output"}, npaths: 3},
-		{nenc: 1, nhid: 0, encLat: true, short: true, encBack: true, layers: []string{"Input", "Encoder1", "Output"}, npaths: 4},
-		{nenc: 2, nhid: 1, encLat: true, short: true, encBack: true, outLat: true, layers: []string{"Input", "Encoder1", "Encoder2", "Hidden1", "Output"}, npaths: 12},
-		{nenc: 1, nhid: 2, layers: []string{"Input", "Encoder1", "Hidden1", "Hidden2", "Output"}, npaths: 7},
+		{nenc: 0, nhid: 1, layers: []string{"Input", "Output", "Hidden1"}, npaths: 3},
+		{nenc: 1, nhid: 0, encLat: true, short: true, encBack: true, layers: []string{"Input", "Output", "Encoder1"}, npaths: 4},
+		{nenc: 2, nhid: 1, encLat: true, short: true, encBack: true, outLat: true, layers: []string{"Input", "Output", "Encoder1", "Encoder2", "Hidden1"}, npaths: 12},
+		{nenc: 1, nhid: 2, layers: []string{"Input", "Output", "Encoder1", "Hidden1", "Hidden2"}, npaths: 7},
 	}
 	for _, c := range cases {
 		cfg, _ := egui.NewConfig[Config]()
@@ -306,7 +307,7 @@ func TestLayerConfigs(t *testing.T) {
 		cfg.Params.NEncoder, cfg.Params.NHidden = c.nenc, c.nhid
 		cfg.Params.EncoderLateral, cfg.Params.Shortcut, cfg.Params.EncoderBack = c.encLat, c.short, c.encBack
 		cfg.Params.OutputLateral = c.outLat
-		cfg.Params.Lateral = false
+		cfg.Params.HiddenLateral = false
 		cfg.Env.Env = map[string]any{"TestPerLevel": 4, "TestReps": 1}
 		ss := &Sim{}
 		ss.SetConfig(cfg)
@@ -327,5 +328,104 @@ func TestLayerConfigs(t *testing.T) {
 			t.Errorf("%s: no test results: %v", name, p.Values)
 		}
 		t.Logf("%s: layers %v, %d paths, Test_P100 %v", name, names, npaths, p.Values)
+	}
+}
+
+// TestCarry checks the carryover stats: present for all layers, finite,
+// ~0 for the clamped Input layer (the baseline accounts for the input
+// overlap), and copied from Test to the Train log.
+func TestCarry(t *testing.T) {
+	cfg, _ := egui.NewConfig[Config]()
+	cfg.GPU = false
+	cfg.GUI = false
+	cfg.Run.NData = 8
+	cfg.Run.Trials = 64
+	cfg.Run.Epochs = 2
+	cfg.Run.Runs = 1
+	cfg.Run.TestInterval = 1
+	cfg.Env.Env = map[string]any{"TestPerLevel": 16, "TestReps": 1}
+	ss := &Sim{}
+	ss.SetConfig(cfg)
+	ss.ConfigSim()
+	ss.Loops.Run(Train)
+	for _, nm := range ss.carryNames() {
+		tr := ss.Stats.Dir("Train/Epoch").Float64(nm).Float1D(-1)
+		ts := ss.Stats.Dir("Test/Epoch").Float64(nm).Float1D(-1)
+		cp := ss.Stats.Dir("Train/Epoch").Float64("Test_" + nm).Float1D(-1)
+		t.Logf("%s: train %.3f test %.3f", nm, tr, ts)
+		if math.IsNaN(tr) || math.IsNaN(ts) || cp != ts {
+			t.Errorf("%s: train %g test %g copied %g", nm, tr, ts, cp)
+		}
+		if strings.HasPrefix(nm, "Input_") && (math.Abs(tr) > 0.1 || math.Abs(ts) > 0.1) {
+			t.Errorf("%s: clamped input carryover should be ~0: train %g test %g", nm, tr, ts)
+		}
+	}
+	if v := carryover([]float32{1, 0}, [][]float32{{1, 0}}, 0); !math.IsNaN(v) {
+		t.Errorf("carryover with one stream: %g", v)
+	}
+	if v := carryover([]float32{1, 0}, [][]float32{{1, 0}, {0, 1}, {0, 1}}, 0); v != 1 {
+		t.Errorf("carryover: %g", v)
+	}
+}
+
+// TestSynFailReset checks that testing with PFail = 0 after training with
+// PFail > 0 has no failed synapses (Network.SynFailReset at the start of
+// TestAll), and that the training failures are resampled after the test.
+func TestSynFailReset(t *testing.T) {
+	base, test := PathParams["Base"], PathParams["Test"]
+	origBase, origTest := *base, *test
+	*base = append(*base, &axon.PathSel{Sel: "Path", Doc: "TestSynFailReset",
+		Set: func(pt *axon.PathParams) {
+			pt.Com.PFail = 0.2
+			pt.Com.PFailSWt.SetBool(false)
+		}})
+	*test = append(*test, &axon.PathSel{Sel: "Path", Doc: "TestSynFailReset",
+		Set: func(pt *axon.PathParams) {
+			pt.Com.PFail = 0
+		}})
+	defer func() { *base, *test = origBase, origTest }()
+	count := func(fail []bool) int {
+		n := 0
+		for _, f := range fail {
+			if f {
+				n++
+			}
+		}
+		return n
+	}
+	for _, gpu := range []bool{false, true} {
+		cfg, _ := egui.NewConfig[Config]()
+		cfg.GPU = gpu
+		cfg.GUI = false
+		cfg.Run.NData = 4
+		cfg.Run.Trials = 16
+		cfg.Env.Env = map[string]any{"TestPerLevel": 4, "TestReps": 1}
+		ss := &Sim{}
+		ss.SetConfig(cfg)
+		ss.ConfigSim()
+		ss.Init()
+		ss.Loops.Step(Train, 1, Epoch)
+		nsyn := int(ss.Net.NetIxs().NSyns)
+		_, _, fail := synState(nsyn)
+		trainFail := count(fail)
+		ss.ApplyModeParams(Test)
+		ss.resetSynFail()
+		_, _, fail = synState(nsyn) // PFail = 0: the resample in synState does nothing
+		testFail := count(fail)
+		ss.ApplyModeParams(Train)
+		ss.resetSynFail()
+		_, _, fail = synState(nsyn)
+		afterFail := count(fail)
+		t.Logf("GPU %v: %d synapses, failed in training %d, in testing %d, after testing %d", gpu, nsyn, trainFail, testFail, afterFail)
+		if trainFail == 0 || afterFail == 0 {
+			t.Errorf("GPU %v: no training failures", gpu)
+		}
+		if testFail != 0 {
+			t.Errorf("GPU %v: %d failed synapses in testing with PFail = 0", gpu, testFail)
+		}
+		if gpu {
+			axon.GPURelease()
+			axon.UseGPU = false
+		}
 	}
 }

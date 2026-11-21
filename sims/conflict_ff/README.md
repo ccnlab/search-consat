@@ -17,7 +17,7 @@ Input    [1, k, 7, 7]
 - `NHidden` (default 2) sets the number of hidden layers, and `HiddenSize` their size.
 - `NEncoder` (default 0) adds encoder layers below the hidden layers (`Encoder1`, ...), as in the axon model: one pool per input slot, of size `EncoderSize`, with pool-to-pool (one-to-one) connections, so each slot is encoded separately. With both encoder and hidden layers, `Shortcut` adds full connections from the last encoder layer to the Output. Either `NEncoder` or `NHidden` can be 0.
 - Loss and optimizer: BCE loss, Adam with LR 0.001. Weights: Glorot init, with biases.
-- The network is deterministic: each test item always produces the same output, so the `TestReps` repetitions are identical, and there is no carryover between trials (`RepeatPrev` is at chance).
+- The network is deterministic: each test item always produces the same output, so the `TestReps` repetitions are identical, and there is no carryover between trials (`RepeatPrev` is at chance). `<Layer>_CarryEnd` (every layer, Train and Test logs, copied as `Test_*`; off in the plots) is the same carryover stat as in the axon and rnn models: the cosine of each layer's activity with its activity on the previous trial of the same data-parallel stream, minus the mean cosine with the other streams' previous activity (the baseline for the input overlap). Here it is a control, and should be ~0. It needs `NData` > 1.
 
 Training runs for `Epochs` (default 100), with a final test at the end of each run, and optional tests every `TestInterval` epochs.
 

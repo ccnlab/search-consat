@@ -15,23 +15,26 @@ import (
 // TrialStatNames are the names of the fixed per-trial stats,
 // in the order returned by [TrialStats.Values]. The probability
 // stats for each target probability follow (see [CFEnv.TargetNames]).
-var TrialStatNames = []string{"Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev"}
+var TrialStatNames = []string{"Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev", "MinorPrevMinor", "MinorPrevMajor", "MinorPrevOther"}
 
 // TrialStatDocs are the descriptions of the trial stats.
 var TrialStatDocs = map[string]string{
-	"Blend":         "1 if the two input groups are too close: SecondRatio is above BlendThr (and it is not an Intrusion), or there is no output activity.",
-	"Intrusion":     "1 if the activity of the groups that are not in the inputs is too high: OtherRatio is above IntrusionThr.",
-	"SecondRatio":   "On conflict trials: the summed (thresholded) output activity of the second input group, divided by that of the top input group (the one with more activity).",
-	"OtherRatio":    "The summed (thresholded) output activity of all the groups that are not in the inputs, divided by that of the top input group, capped at 1.",
-	"MatchCos":      "Cosine between the output activity and the closest output pattern.",
-	"Slot0":         "On tied conflict trials (two input groups with equal evidence) with a choice of one of them: 1 if it is the group in slot 0. 0.5 = no slot bias.",
-	"RepeatPrev":    "On tied conflict trials (two input groups with equal evidence) with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats the previous one. 0.5 = no carryover bias.",
-	"IntrusionPrev": "On Intrusion trials where the previous trial's choice is a group that is not in the inputs: 1 if the intrusion is that previous group. 1 / (NGroups - 2) = no relation to the previous trial (for 2 input groups).",
-	"Consist":       "Test only: the consistency of the choice for the same conflict item across its repetitions: the proportion of repetitions with its most common choice (Blend counts as a choice), averaged over the conflict items. 1 = the same choice every time.",
-	"TieConsist":    "Test only: Consist for the tied items (equal evidence for the two groups): 1 = the same choice every time, 0.5 = a coin flip.",
-	"SlotRange":     "Test only: the range (max - min) across slots of the Slot<n> stats: how much the choice on ties depends on which slots the groups are in. 0 = no slot bias.",
-	"AbsDiff":       "Mean across target probabilities of the absolute difference between the measured probability (P<target>) and the target.",
-	"InAbsDiff":     "AbsDiff for the input-only probabilities (In<target>): mean absolute difference from the targets, among only the choices of an input group.",
+	"Blend":          "1 if the two input groups are too close: SecondRatio is above BlendThr (and it is not an Intrusion), or there is no output activity.",
+	"Intrusion":      "1 if the activity of the groups that are not in the inputs is too high: OtherRatio is above IntrusionThr.",
+	"SecondRatio":    "On conflict trials: the summed (thresholded) output activity of the second input group, divided by that of the top input group (the one with more activity).",
+	"OtherRatio":     "The summed (thresholded) output activity of all the groups that are not in the inputs, divided by that of the top input group, capped at 1.",
+	"MatchCos":       "Cosine between the output activity and the closest output pattern.",
+	"Slot0":          "On tied conflict trials (two input groups with equal evidence) with a choice of one of them: 1 if it is the group in slot 0. 0.5 = no slot bias.",
+	"RepeatPrev":     "On tied conflict trials (two input groups with equal evidence) with a choice, where the previous trial's choice is one of the input groups: 1 if the choice repeats the previous one. 0.5 = no carryover bias.",
+	"IntrusionPrev":  "On Intrusion trials where the previous trial's choice is a group that is not in the inputs: 1 if the intrusion is that previous group. 1 / (NGroups - 2) = no relation to the previous trial (for 2 input groups).",
+	"MinorPrevMinor": "On unequal conflict trials (two input groups with different evidence) with a choice of one of them, where the previous trial's choice is the minority group (less evidence): 1 if the choice is the minority group. Compare with MinorPrevOther: higher = carryover of the previous choice drives minority choices.",
+	"MinorPrevMajor": "On unequal conflict trials with a choice of one of the input groups, where the previous trial's choice is the majority group (more evidence): 1 if the choice is the minority group.",
+	"MinorPrevOther": "On unequal conflict trials with a choice of one of the input groups, where the previous trial's choice is a group that is not in the inputs: 1 if the choice is the minority group. The baseline for the minority choice without carryover to either input group.",
+	"Consist":        "Test only: the consistency of the choice for the same conflict item across its repetitions: the proportion of repetitions with its most common choice (Blend counts as a choice), averaged over the conflict items. 1 = the same choice every time.",
+	"TieConsist":     "Test only: Consist for the tied items (equal evidence for the two groups): 1 = the same choice every time, 0.5 = a coin flip.",
+	"SlotRange":      "Test only: the range (max - min) across slots of the Slot<n> stats: how much the choice on ties depends on which slots the groups are in. 0 = no slot bias.",
+	"AbsDiff":        "Mean across target probabilities of the absolute difference between the measured probability (P<target>) and the target.",
+	"InAbsDiff":      "AbsDiff for the input-only probabilities (In<target>): mean absolute difference from the targets, among only the choices of an input group.",
 }
 
 // SlotName returns the stat name for the choice on ties of the group
@@ -95,6 +98,12 @@ func (ev *CFEnv) InTargetNames() []string {
 type TrialStats struct {
 	Blend, Intrusion, SecondRatio, OtherRatio, MatchCos, Slot0, RepeatPrev, IntrusionPrev float64
 
+	// MinorPrevMinor, MinorPrevMajor, and MinorPrevOther are whether the
+	// choice is the minority group on unequal conflict trials, split by
+	// the previous trial's choice: the minority group, the majority group,
+	// or a group not in the inputs (see [TrialStatDocs]).
+	MinorPrevMinor, MinorPrevMajor, MinorPrevOther float64
+
 	// Probs are the per-trial probability stats for each target in
 	// [Space.Targets]: the mean over the input groups with that expected
 	// probability of whether that group was chosen (NaN if none).
@@ -120,7 +129,7 @@ type TrialStats struct {
 
 // Values returns the fixed stats in the order of [TrialStatNames].
 func (ts *TrialStats) Values() []float64 {
-	return []float64{ts.Blend, ts.Intrusion, ts.SecondRatio, ts.OtherRatio, ts.MatchCos, ts.Slot0, ts.RepeatPrev, ts.IntrusionPrev}
+	return []float64{ts.Blend, ts.Intrusion, ts.SecondRatio, ts.OtherRatio, ts.MatchCos, ts.Slot0, ts.RepeatPrev, ts.IntrusionPrev, ts.MinorPrevMinor, ts.MinorPrevMajor, ts.MinorPrevOther}
 }
 
 // Cosine returns the cosine between a and b (0 if either is all zeros).
@@ -275,6 +284,7 @@ func (ev *CFEnv) TrialStats(out []float32, ts *TrialStats) {
 			ts.IntrusionPrev = 1
 		}
 	}
+	ts.minorPrev(it, gi, ev.PrevChoice)
 	ev.PrevChoice = ts.Choice
 	if ev.IsTest && ev.Counts != nil && ev.Ctr >= 0 {
 		idx := ev.Items[ev.Order[ev.Ctr]]
@@ -284,6 +294,31 @@ func (ev *CFEnv) TrialStats(out []float32, ts *TrialStats) {
 			ev.Counts[idx] = c
 		}
 		c[ts.Choice+1]++
+	}
+}
+
+// minorPrev sets the MinorPrev* stats for item it, with the index gi of
+// the choice in its groups, and the previous trial's choice prev.
+func (ts *TrialStats) minorPrev(it *Item, gi, prev int) {
+	ts.MinorPrevMinor, ts.MinorPrevMajor, ts.MinorPrevOther = math.NaN(), math.NaN(), math.NaN()
+	if len(it.Probs) != 2 || it.IsTie() || gi < 0 || prev < 0 {
+		return
+	}
+	minor := 1
+	if it.Probs[0] < it.Probs[1] {
+		minor = 0
+	}
+	v := 0.0
+	if gi == minor {
+		v = 1
+	}
+	switch it.GroupIndex(prev) {
+	case minor:
+		ts.MinorPrevMinor = v
+	case 1 - minor:
+		ts.MinorPrevMajor = v
+	default:
+		ts.MinorPrevOther = v
 	}
 }
 
@@ -342,4 +377,48 @@ func ItemConsistency(envs ...*CFEnv) (consist, ties float64) {
 		ties = tsum / float64(tn)
 	}
 	return
+}
+
+// MatchNames are the names of the probability-matching shape stats,
+// computed above the Trial level from the input-only probabilities
+// (In<target>) by [MatchSlope], for the target pairs from [MatchPairs].
+var MatchNames = []string{"MatchCenter", "MatchExtreme"}
+
+func init() {
+	TrialStatDocs["MatchCenter"] = "Test only: the slope of the input-only choice curve for the complementary target pair closest to 50% (e.g., (In67 - In33) / .34): 1 = probability matching, above 1 = sharper than matching (toward winner-take-all), below 1 = flatter."
+	TrialStatDocs["MatchExtreme"] = "Test only: the slope of the input-only choice curve for the complementary target pair farthest from 50%, short of 100/0 (e.g., (In83 - In17) / .66): 1 = probability matching, above 1 = sharper than matching, below 1 = flatter."
+}
+
+// MatchPairs returns the higher target of the complementary target
+// pairs (p, 100-p, with 50 < p < 100, both in targets) closest to and
+// farthest from 50, for the MatchCenter and MatchExtreme stats
+// (0 if there is no such pair).
+func MatchPairs(targets []int) (center, extreme int) {
+	has := map[int]bool{}
+	for _, p := range targets {
+		has[p] = true
+	}
+	for _, p := range targets {
+		if p <= 50 || p >= 100 || !has[100-p] {
+			continue
+		}
+		if center == 0 || p < center {
+			center = p
+		}
+		if p > extreme {
+			extreme = p
+		}
+	}
+	return
+}
+
+// MatchSlope returns the slope of the choice curve between the
+// probabilities hi and lo of choosing the groups with the complementary
+// targets pct and 100-pct: (hi - lo) / ((2 pct - 100) / 100). 1 = matching.
+// It returns NaN if pct is 0 (no pair).
+func MatchSlope(hi, lo float64, pct int) float64 {
+	if pct == 0 {
+		return math.NaN()
+	}
+	return (hi - lo) / (float64(2*pct-100) / 100)
 }

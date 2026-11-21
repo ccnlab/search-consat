@@ -82,6 +82,19 @@ With noise, the choices do vary somewhat across the repetitions of the same item
 - Training is still perfect: the network learns to override the carryover when all the inputs agree, and it only decides close calls.
 - Unlike the axon model, there are essentially no intrusions: the axon model produces the previous trial's group 10–14% of the time even when it is not one of the inputs. The axon model's choices on ties are also more variable (partly because the intrusions are a third outcome), and its P67 is lower.
 
+`<Layer>_CarryEnd` (every layer, in the Train and Test logs, copied to the Train log as `Test_*`; off in the plots) measures how much of each layer's state carries over, as in the axon model: the cosine between the layer's final activity (`Act`) and its final activity on the previous trial of the same data-parallel stream, minus the mean cosine with the previous activity of the other streams. The other streams run independent random item sequences through the same weights, so the baseline has the same input overlap without the carryover: 0 = none. There is no `_CarryMid` (the per-cycle activity below could provide it). The stat is computed for any `Decay`, so `Decay` 1 is the no-carryover control, and `Input_CarryEnd` (clamped) should be ~0. It needs `NData` > 1.
+
+### Settling dynamics
+
+`Run.RecordCycles` (on by default, with `NCycles` > 1) reads back the activity of every layer on every settling cycle (egomlx `Network.RecordCycles`), for the same test stats as the axon model (see the conflict README):
+
+- The within-trial competition stats (`LeadSwaps`, `CommitCyc`, `LoserFrac`, `AltCorr`, `Agree50`, `Agree100`, and the Minor/Major splits), from the summed Output `Act` of each input group on each cycle.
+- The settling microscope (`Test Microscope` and `Test MicroscopeTrial` tabs): the cosine of each layer's activity on each cycle with its final activity, and of the Output with the chosen and the other group's patterns (`OutWin`, `OutLose`).
+
+The settling cycles are mapped onto the 150-cycle axon minus phase, at 150 / `NCycles` cycles each (15 for 10 cycles), so `CommitCyc`, `Agree50`, `Agree100` and the microscope's `Cycle` axis are on the axon time scale. With only `NCycles` samples (vs 30 in the axon model), `LeadSwaps` can count fewer swaps; more cycles (see Tanh and longer settling) give a finer view. The Output is a sigmoid, so its group sums include the low activity of all the units, not just those above a threshold.
+
+The rate-code prediction of the perforated-attractor idea: the lead is set early and never swaps (`LeadSwaps` about 0), `LoserFrac` goes to 0, and the microscope approaches the final state smoothly.
+
 ### Weight decay and dropout
 
 k = 6, 1 run each, 30 epochs, `Noise` 0.2 unless noted. `WeightDecay` > 0 uses the AdamW optimizer, and `Dropout` applies to the hidden layer units in training only, on every cycle.

@@ -157,6 +157,13 @@ type RunConfig struct {
 	// representations to measure variance.
 	PCAInterval int `default:"10"`
 
+	// RecordCycles reads back the activity of every layer on every cycle
+	// of settling (egomlx Network.RecordCycles), for the test
+	// within-trial competition stats (LeadSwaps, CommitCyc, ...; see
+	// StatCompete) and the settling microscope (Test Microscope and
+	// Test MicroscopeTrial tabs; see StatMicroscope), as in the axon model.
+	RecordCycles bool `default:"true"`
+
 	// StartWeights is the name of weights file to load at start of first run.
 	StartWeights string
 }

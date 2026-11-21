@@ -17,6 +17,7 @@ import (
 	"os"
 	"reflect"
 
+	"cogentcore.org/core/base/errors"
 	"cogentcore.org/core/base/metadata"
 	"cogentcore.org/core/base/reflectx"
 	"cogentcore.org/core/core"
@@ -35,6 +36,7 @@ import (
 	"github.com/emer/emergent/v2/egui"
 	"github.com/emer/emergent/v2/env"
 	"github.com/emer/emergent/v2/looper"
+	"github.com/emer/emergent/v2/netview"
 	"github.com/emer/emergent/v2/paths"
 )
 
@@ -109,6 +111,16 @@ type Sim struct {
 	// TestCount counts the number of tests run (calls to TestAll) in the
 	// current run, for copying the test stats into the Train Epoch stats.
 	TestCount int `display:"-"`
+
+	// competeDrive is the summed Output CaM of each group at each
+	// competition sample of the current test trial: [NData][sample][group]
+	// (see Run.CompeteInterval).
+	competeDrive [][][]float32
+
+	// microAct is the Act of each layer at each competition sample of
+	// the current test trial: [NData][layer][sample][neuron]
+	// (see Run.Microscope).
+	microAct [][][][]float32
 }
 
 func (ss *Sim) SetConfig(cfg *Config) { ss.Config = cfg }
@@ -123,7 +135,7 @@ func (ss *Sim) ConfigSim() {
 	ss.Root, _ = tensorfs.NewDir("Root")
 	tensorfs.CurRoot = ss.Root
 	ss.Net = axon.NewNetwork(ss.Config.Name)
-	ss.Params.Config(LayerParams, PathParams, ss.Config.Params.Sheet, ss.Config.Params.Tag, reflect.ValueOf(ss))
+	ss.configParams()
 	ss.RandSeeds.Init(100) // max 100 runs
 	ss.InitRandSeed(0)
 	if ss.Config.GPU {
@@ -146,21 +158,44 @@ func (ss *Sim) ConfigSim() {
 	}
 }
 
-func (ss *Sim) ConfigEnv() {
-	// Can be called multiple times -- don't re-create
-	newEnv := (len(ss.Envs) == 0)
+func (ss *Sim) configParams() {
+	ss.Params.Config(LayerParams, PathParams, ss.Config.Params.Sheet, ss.Config.Params.Tag, reflect.ValueOf(ss))
+}
 
+// ReConfig applies the current Config to the sim, as the Config button
+// does: it makes new environments, rebuilds the network (with new
+// weights), loops, and stats (deleting all the data in Root, so all
+// stats data is reset), and then calls Init. The GPU buffers are
+// resized as needed when the network state is copied up.
+// Config.GPU and Config.GUI cannot be changed this way.
+func (ss *Sim) ReConfig() {
+	errors.Log(ss.Root.DeleteAll())
+	ss.configParams()
+	ss.ConfigEnv()
+	ss.Net.DeleteAll()
+	ss.ConfigNet(ss.Net)
+	ss.ConfigLoops()
+	ss.ConfigStats()
+	if ss.GUI.Active {
+		ss.configNetView(ss.GUI.NetViews[0])
+		ss.GUI.UpdateFiles()
+	}
+	ss.Init()
+	if ss.GUI.Active {
+		ss.GUI.Toolbar.Update() // the looper controls show the loops' step settings
+		ss.GUI.UpdateWindow()
+	}
+}
+
+// ConfigEnv makes new environments, replacing any existing ones
+// (see [Sim.ReConfig]).
+func (ss *Sim) ConfigEnv() {
+	ss.Envs = env.Envs{}
 	ndata := ss.Config.Run.NData
 
 	for di := range ndata {
-		var trn, tst *cfenv.CFEnv
-		if newEnv {
-			trn = &cfenv.CFEnv{}
-			tst = &cfenv.CFEnv{}
-		} else {
-			trn = ss.Envs.ByModeDi(Train, di).(*cfenv.CFEnv)
-			tst = ss.Envs.ByModeDi(Test, di).(*cfenv.CFEnv)
-		}
+		trn := &cfenv.CFEnv{}
+		tst := &cfenv.CFEnv{}
 
 		// note: names must be standard here!
 		trn.Name = env.ModeDi(Train, di)
@@ -313,9 +348,12 @@ func (ss *Sim) NetViewUpdater(mode enums.Enum) *axon.NetViewUpdate {
 	return &ss.TestUpdate
 }
 
-// ConfigLoops configures the control loops: Training, Testing
+// ConfigLoops configures the control loops: Training, Testing.
+// When called again (see [Sim.ReConfig]), it recycles the existing
+// ss.Loops, keeping the step settings of the GUI.
 func (ss *Sim) ConfigLoops() {
-	ls := looper.NewStacks()
+	ls, prev := looper.RecycleStacks(ss.Loops)
+	ss.Loops = ls
 
 	trials := int(math32.IntMultipleGE(float32(ss.Config.Run.Trials), float32(ss.Config.Run.NData)))
 	cycles := ss.Config.Run.Cycles()
@@ -362,6 +400,30 @@ func (ss *Sim) ConfigLoops() {
 		ls.Loop(Test, Trial).OnEnd.Add("SynFail", ss.Net.SynFail)
 	}
 
+	if iv := ss.Config.Run.CompeteInterval; iv > 0 {
+		// replaces the standard test Cycle function (axon.LooperCycleStartFunc)
+		// to get the neurons back from the GPU on the sample cycles.
+		cyc := ls.Loop(Test, Cycle)
+		isi, minus := ss.Config.Run.ISICycles, ss.Config.Run.MinusCycles
+		errors.Log(cyc.OnStart.Replace("Cycle", func() bool {
+			net := ss.Net
+			if axon.CurrentNetwork != net {
+				net.SetAsCurrent()
+			}
+			c := cyc.Counter.Cur - isi + 1 // minus phase cycles at the end of this one
+			sample := c > 0 && c <= minus && c%iv == 0
+			get := sample || axon.LooperCycleGetNeurons(ls, net, ss.NetViewUpdater, Cycle, Test)
+			net.Cycle(get)
+			if axon.UseGPU && !get {
+				net.Context().CycleInc() // keep synced
+			}
+			if sample {
+				ss.competeSample(c/iv - 1)
+			}
+			return true
+		}))
+	}
+
 	if ss.Config.GUI {
 		axon.LooperUpdateNetView(ls, Cycle, Trial, ss.NetViewUpdater)
 
@@ -372,7 +434,7 @@ func (ss *Sim) ConfigLoops() {
 	if ss.Config.Debug {
 		mpi.Println(ls.DocString())
 	}
-	ss.Loops = ls
+	ls.CopyStepSettings(prev)
 }
 
 // ApplyInputs applies input patterns from given environment for given mode.
@@ -424,9 +486,22 @@ func (ss *Sim) TestAll() {
 		ss.Envs.ByModeDi(Test, di).Init(0)
 	}
 	ss.ApplyModeParams(Test)
+	ss.resetSynFail()
 	ss.Loops.ResetAndRun(Test)
 	ss.Loops.Mode = Train // important because this is called from Train Run: go back.
 	ss.ApplyModeParams(Train)
+	ss.resetSynFail()
+}
+
+// resetSynFail restores all the failed synaptic weights (Com.PFail) left
+// from the previous mode (Network.SynFailReset), and then resamples the
+// failures for the current params (Network.SynFail), so that a test with
+// PFail = 0 after training with PFail > 0 has no failures, and one with
+// PFail > 0 starts from a new failure pattern (resampled after each trial
+// only with TestSynFail).
+func (ss *Sim) resetSynFail() {
+	ss.Net.SynFailReset()
+	ss.Net.SynFail()
 }
 
 //////// Stats
@@ -491,9 +566,14 @@ func (ss *Sim) UpdatePlots(mode Modes, level Levels) {
 	nm := mode.String() + " " + level.String() + " Plot"
 	tbs.GoUpdatePlot(nm)
 	switch level {
+	case Trial:
+		if mode == Test {
+			tbs.GoUpdatePlot("Test MicroscopeTrial Plot")
+		}
 	case Epoch:
 		if mode == Test {
 			tbs.GoUpdatePlot("Test SecondRatioHist Plot")
+			tbs.GoUpdatePlot("Test Microscope Plot")
 		}
 	case Run:
 		tbs.GoUpdatePlot("Train RunAll Plot")
@@ -536,6 +616,10 @@ func (ss *Sim) StatsInit() {
 		tbs.PlotTensorFS(axon.StatsNode(ss.Stats, Test, Trial))
 		tbs.PlotTensorFS(ss.Stats.Dir("Train/RunAll"))
 		tbs.PlotTensorFS(ss.Stats.Dir("Test/SecondRatioHist"))
+		if ss.Config.Run.CompeteInterval > 0 && ss.Config.Run.Microscope {
+			tbs.PlotTensorFS(ss.Stats.Dir("Test/Microscope"))
+			tbs.PlotTensorFS(ss.Stats.Dir("Test/MicroscopeTrial"))
+		}
 		tbs.SelectTabIndex(idx)
 	}
 }
@@ -544,6 +628,7 @@ func (ss *Sim) StatsInit() {
 // in the tensorfs system.
 func (ss *Sim) ConfigStats() {
 	net := ss.Net
+	ss.StatFuncs = nil
 	ss.Stats = ss.Root.Dir("Stats")
 	ss.Current = ss.Stats.Dir("Current")
 
@@ -558,11 +643,19 @@ func (ss *Sim) ConfigStats() {
 	ss.AddStat(ss.StatOutput())
 	ss.AddStat(ss.StatConsist())
 	ss.AddStat(ss.StatSilent())
+	ss.AddStat(ss.StatCarry())
+	if ss.Config.Run.CompeteInterval > 0 {
+		ss.AddStat(ss.StatCompete())
+		ss.AddStat(ss.StatTestCopy(cfenv.CompeteNames...))
+		if ss.Config.Run.Microscope {
+			ss.AddStat(ss.StatMicroscope())
+		}
+	}
 	ss.PatternDistMatrix()
 	ss.AddStat(ss.StatSecondHist(10))
 
 	// get test stats in train log
-	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev", "Consist", "TieConsist", "InAbsDiff", "SlotRange"}, append(append(append(ss.targetNames(), ss.inTargetNames()...), ss.slotNames()...), ss.silentNames()...)...)...))
+	ss.AddStat(ss.StatTestCopy(append([]string{"AbsDiff", "Blend", "Intrusion", "SecondRatio", "OtherRatio", "MatchCos", "Slot0", "RepeatPrev", "IntrusionPrev", "MinorPrevMinor", "MinorPrevMajor", "MinorPrevOther", "Consist", "TieConsist", "InAbsDiff", "MatchCenter", "MatchExtreme", "SlotRange"}, append(append(append(ss.targetNames(), ss.inTargetNames()...), ss.slotNames()...), append(ss.silentNames(), ss.carryNames()...)...)...)...))
 
 	lays := net.LayersByTypeTry(axon.SuperLayer, axon.CTLayer, axon.InputLayer, axon.TargetLayer)
 	ss.AddStatStd(axon.StatLayerActGe(ss.Stats, net, Train, Trial, Run, lays...))
@@ -624,11 +717,7 @@ func (ss *Sim) ConfigGUI(b tree.Node) {
 	ss.GUI.MakeBody(b, ss, ss.Root, ss.Config.Name, ss.Config.Title, ss.Config.Doc)
 	ss.GUI.StopLevel = Trial
 	nv := ss.GUI.AddNetView("Network")
-	nv.Settings.MaxRecs = 2 * ss.Config.Run.Cycles()
-	nv.Settings.Raster.Max = ss.Config.Run.Cycles()
-	nv.SetNet(ss.Net)
-	ss.TrainUpdate.Config(nv, axon.Theta, ss.StatCounters)
-	ss.TestUpdate.Config(nv, axon.Theta, ss.StatCounters)
+	ss.configNetView(nv)
 	ss.GUI.OnStop = func(mode, level enums.Enum) {
 		vu := ss.NetViewUpdater(mode)
 		vu.UpdateWhenStopped(mode, level)
@@ -650,10 +739,28 @@ func (ss *Sim) ConfigGUI(b tree.Node) {
 	ss.GUI.FinalizeGUI(false)
 }
 
+// configNetView configures the network view for the current network.
+func (ss *Sim) configNetView(nv *netview.NetView) {
+	nv.Settings.MaxRecs = 2 * ss.Config.Run.Cycles()
+	nv.Settings.Raster.Max = ss.Config.Run.Cycles()
+	nv.SetNet(ss.Net)
+	ss.TrainUpdate.Config(nv, axon.Theta, ss.StatCounters)
+	ss.TestUpdate.Config(nv, axon.Theta, ss.StatCounters)
+}
+
 func (ss *Sim) MakeToolbar(p *tree.Plan) {
 	ss.GUI.AddLooperCtrl(p, ss.Loops)
 
 	tree.Add(p, func(w *core.Separator) {})
+	ss.GUI.AddToolbarItem(p, egui.ToolbarItem{
+		Label:   "Config",
+		Icon:    icons.Settings,
+		Tooltip: "Applies the current Config settings: makes new environments, rebuilds the network (with new weights), loops, and stats (resetting all stats data), and then does Init. GPU and GUI cannot be changed.",
+		Active:  egui.ActiveStopped,
+		Func: func() {
+			ss.ReConfig()
+		},
+	})
 	ss.GUI.AddToolbarItem(p, egui.ToolbarItem{
 		Label:   "New Seed",
 		Icon:    icons.Add,

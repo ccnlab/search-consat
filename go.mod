@@ -3,11 +3,11 @@ module github.com/ccnlab/search-consat
 go 1.27.0
 
 require (
-	cogentcore.org/core v0.5.45
-	cogentcore.org/lab v0.2.21
-	github.com/emer/axon/v2 v2.0.13
-	github.com/emer/egomlx v0.1.2
-	github.com/emer/emergent/v2 v2.0.5
+	cogentcore.org/core v0.5.48
+	cogentcore.org/lab v0.2.23
+	github.com/emer/axon/v2 v2.0.14
+	github.com/emer/egomlx v0.1.3
+	github.com/emer/emergent/v2 v2.0.6
 )
 
 require (
@@ -28,7 +28,7 @@ require (
 	github.com/chewxy/math32 v1.11.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/cogentcore/mvm v0.0.0-20261026193832-5ebd19c3fa21 // indirect
+	github.com/cogentcore/mvm v0.0.0-20261120030535-e3f31e8a9ab5 // indirect
 	github.com/cogentcore/typesetting v0.0.0-20261022123550-2cd93a91580e // indirect
 	github.com/cogentcore/yaegi v0.0.0-20260116172027-700fbf8949f3 // indirect
 	github.com/creack/pty v1.1.24 // indirect

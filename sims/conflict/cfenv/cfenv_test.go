@@ -631,3 +631,99 @@ func TestItemConsistency(t *testing.T) {
 		t.Errorf("coin flip ties consistency %g, want about 0.59", ties)
 	}
 }
+
+// TestMinorPrev checks the minority choice stats, split by the previous
+// trial's choice, on unequal conflict items (3 slots: 2 vs 1 inputs).
+func TestMinorPrev(t *testing.T) {
+	var cfg Config
+	cfg.Defaults()
+	cfg.NSlots = 3
+	ev := &CFEnv{Configs: cfg}
+	ev.Config(0, 1, 0, true, 0)
+	ev.Init(0)
+	sp := ev.Space()
+	choose := func(g int) []float32 {
+		out := make([]float32, sp.Outputs.SubSpace(0).Len())
+		for i, v := range sp.Outputs.SubSpace(g).(*tensor.Float32).Values {
+			if v > 0 {
+				out[i] = 0.9
+			}
+		}
+		return out
+	}
+	nan3 := func(ts *TrialStats) bool {
+		return math.IsNaN(ts.MinorPrevMinor) && math.IsNaN(ts.MinorPrevMajor) && math.IsNaN(ts.MinorPrevOther)
+	}
+	var ts TrialStats
+	n := 0
+	for range 200 {
+		ev.Step()
+		it := ev.Cur
+		if it.NConflict == 0 {
+			ev.TrialStats(choose(it.Groups[0]), &ts)
+			if !nan3(&ts) {
+				t.Fatalf("consistent item: %v", ts.Values())
+			}
+			continue
+		}
+		n++
+		major, minor := it.Groups[0], it.Groups[1] // 2 vs 1 inputs
+		other := 0
+		for it.GroupIndex(other) >= 0 {
+			other++
+		}
+		ev.PrevChoice = minor
+		ev.TrialStats(choose(minor), &ts)
+		if ts.MinorPrevMinor != 1 || !math.IsNaN(ts.MinorPrevMajor) || !math.IsNaN(ts.MinorPrevOther) {
+			t.Fatalf("prev minor, choose minor: %s: %v", ev.String(), ts.Values())
+		}
+		// PrevChoice is now minor
+		ev.TrialStats(choose(major), &ts)
+		if ts.MinorPrevMinor != 0 {
+			t.Fatalf("prev minor, choose major: %s: %v", ev.String(), ts.Values())
+		}
+		// PrevChoice is now major
+		ev.TrialStats(choose(minor), &ts)
+		if ts.MinorPrevMajor != 1 || !math.IsNaN(ts.MinorPrevMinor) || !math.IsNaN(ts.MinorPrevOther) {
+			t.Fatalf("prev major, choose minor: %s: %v", ev.String(), ts.Values())
+		}
+		ev.PrevChoice = other
+		ev.TrialStats(choose(major), &ts)
+		if ts.MinorPrevOther != 0 || !math.IsNaN(ts.MinorPrevMinor) || !math.IsNaN(ts.MinorPrevMajor) {
+			t.Fatalf("prev other, choose major: %s: %v", ev.String(), ts.Values())
+		}
+		ev.PrevChoice = -1 // previous blend: no stat
+		ev.TrialStats(choose(minor), &ts)
+		if !nan3(&ts) {
+			t.Fatalf("prev blend: %v", ts.Values())
+		}
+		ev.PrevChoice = minor // intrusion: no stat
+		ev.TrialStats(choose(other), &ts)
+		if ts.Intrusion != 1 || !nan3(&ts) {
+			t.Fatalf("intrusion: %v", ts.Values())
+		}
+	}
+	if n == 0 {
+		t.Fatal("no conflict items")
+	}
+}
+
+func TestMatchPairs(t *testing.T) {
+	c, e := MatchPairs([]int{100, 83, 67, 50, 33, 17})
+	if c != 67 || e != 83 {
+		t.Fatalf("MatchPairs: %d %d", c, e)
+	}
+	c, e = MatchPairs([]int{100, 75, 50})
+	if c != 0 || e != 0 {
+		t.Fatalf("MatchPairs without pairs: %d %d", c, e)
+	}
+	if s := MatchSlope(.67, .33, 67); math.Abs(s-1) > 1e-9 {
+		t.Fatalf("MatchSlope matching: %g", s)
+	}
+	if s := MatchSlope(1, 0, 83); math.Abs(s-1/.66) > 1e-9 {
+		t.Fatalf("MatchSlope winner-take-all: %g", s)
+	}
+	if !math.IsNaN(MatchSlope(1, 0, 0)) {
+		t.Fatal("MatchSlope without pair should be NaN")
+	}
+}

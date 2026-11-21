@@ -71,13 +71,14 @@ var PathParams = axon.PathSheets{
 	"Base": {
 		{Sel: "Path", Doc: "std",
 			Set: func(pt *axon.PathParams) {
-				pt.Learn.LRate.Base = 0.005 // 0.005 def
+				pt.PathScale.Abs = 1.0      // critical to reset to default b/c not otherwise done!
+				pt.Learn.LRate.Base = 0.005 // 0.005 def -- faster worse interference
 				pt.SWts.Adapt.LRate = 0.0001
 				pt.Learn.DWt.SubMean = 1
 				pt.SWts.Init.SPct = 1.0 // .5 >= 1 here -- 0.5 more reliable, 1.0 faster..
 				// NOTE: MUST turn on Config.Params.TestSynFail for this to affect testing:
-				pt.Com.PFail = 0.4 // 0.1 is protective against interference late
-				pt.Com.PFailSWt.SetBool(true)
+				pt.Com.PFail = 0.3            // 0.4 most linear
+				pt.Com.PFailSWt.SetBool(true) // swt is essential!
 			}},
 		{Sel: ".BackPath", Doc: "top-down back-pathways MUST have lower relative weight scale, otherwise network hallucinates",
 			Set: func(pt *axon.PathParams) {
@@ -95,8 +96,9 @@ var PathParams = axon.PathSheets{
 	"Test": {
 		{Sel: "Path", Doc: "test manip",
 			Set: func(pt *axon.PathParams) {
-				pt.PathScale.Abs = 0.8 // 0.8 simulates effects of pfail
-				pt.Com.PFail = 0
+				// pt.PathScale.Abs = 0.8 // 0.8 simulates effects of pfail
+				// pt.Com.PFail = 0.4
+				// pt.Com.PFailSWt.SetBool(false)
 			}},
 	},
 }

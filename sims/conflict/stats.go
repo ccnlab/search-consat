@@ -13,6 +13,7 @@ import (
 	"cogentcore.org/core/base/metadata"
 	"cogentcore.org/core/core"
 	"cogentcore.org/lab/plot"
+	"cogentcore.org/lab/plot/plots"
 	"cogentcore.org/lab/stats/histogram"
 	"cogentcore.org/lab/stats/metric"
 	"cogentcore.org/lab/stats/stats"
@@ -775,9 +776,11 @@ func (ss *Sim) StatMicroscope() func(mode Modes, level Levels, start bool) {
 	avgNames := append(append([]string{}, lnames...), microNames(true)...)
 	trlNames := append(append([]string{}, lnames...), microNames(false)...)
 	sums := make([][]float64, len(avgNames))
+	sqs := make([][]float64, len(avgNames)) // sums of squares, for the SEM
 	ns := make([][]float64, len(avgNames))
 	for i := range avgNames {
 		sums[i] = make([]float64, nsamp)
+		sqs[i] = make([]float64, nsamp)
 		ns[i] = make([]float64, nsamp)
 	}
 	col := map[string]int{}
@@ -788,18 +791,41 @@ func (ss *Sim) StatMicroscope() func(mode Modes, level Levels, start bool) {
 		d := ss.Stats.Dir("Test").Dir(dir)
 		cyc := d.Float64("Cycle", nsamp)
 		plot.SetFirstStyler(cyc, func(s *plot.Style) { s.Role = plot.X })
+		if dir == "MicroscopeTrial" {
+			tn := d.StringValue("TrialName", nsamp)
+			metadata.SetDoc(tn, "The name of the trial and its choice (the same on every row), which is the title of the plot.")
+			plot.SetFirstStyler(tn, func(s *plot.Style) { s.Role = plot.Title })
+		}
 		for i := range nsamp {
 			cyc.SetFloat1D(float64((i+1)*iv), i)
 		}
+		avg := dir == "Microscope" // the average has SEM bands
 		for _, nm := range names {
+			on := false
+			switch nm {
+			case "OutWin", "OutLose", "OutWinMinor", "OutLoseMinor", "Hidden1", "Output":
+				on = true
+			}
 			tsr := d.Float64(nm, nsamp)
 			plot.SetFirstStyler(tsr, func(s *plot.Style) {
 				s.Range.SetMin(0).SetMax(1)
-				switch nm {
-				case "OutWin", "OutLose", "OutWinMinor", "OutLoseMinor", "Hidden1", "Output":
-					s.On = true
+				s.On = on
+				s.Role = plot.Y
+				if avg {
+					s.Group = nm
 				}
 			})
+			if avg {
+				sem := d.Float64(nm+"SEM", nsamp)
+				metadata.SetDoc(sem, "The standard error of the mean of "+nm+" over trials, plotted as a band around it.")
+				plot.SetFirstStyler(sem, func(s *plot.Style) {
+					s.On = on
+					s.Role = plot.High
+					s.Group = nm
+					s.Plotter = plots.BandType
+					s.NoLegend = true
+				})
+			}
 			switch {
 			case strings.HasPrefix(nm, "OutWin"):
 				metadata.SetDoc(tsr, "Cosine of the Output activity with the output pattern of the chosen input group, over minus phase cycles.")
@@ -815,6 +841,7 @@ func (ss *Sim) StatMicroscope() func(mode Modes, level Levels, start bool) {
 			return
 		}
 		sums[col[nm]][s] += v
+		sqs[col[nm]][s] += v * v
 		ns[col[nm]][s]++
 	}
 	return func(mode Modes, level Levels, start bool) {
@@ -827,6 +854,7 @@ func (ss *Sim) StatMicroscope() func(mode Modes, level Levels, start bool) {
 				config("MicroscopeTrial", trlNames)
 				for i := range sums {
 					clear(sums[i])
+					clear(sqs[i])
 					clear(ns[i])
 				}
 			}
@@ -836,12 +864,18 @@ func (ss *Sim) StatMicroscope() func(mode Modes, level Levels, start bool) {
 		if level == Epoch {
 			for i, nm := range avgNames {
 				tsr := avgDir.Float64(nm, nsamp)
+				sem := avgDir.Float64(nm+"SEM", nsamp)
 				for s := range nsamp {
-					v := math.NaN()
-					if ns[i][s] > 0 {
-						v = sums[i][s] / ns[i][s]
+					n := ns[i][s]
+					m, e := math.NaN(), math.NaN()
+					if n > 0 {
+						m = sums[i][s] / n
 					}
-					tsr.SetFloat1D(v, s)
+					if n > 1 { // sample variance / n
+						e = math.Sqrt(max(sqs[i][s]-n*m*m, 0) / ((n - 1) * n))
+					}
+					tsr.SetFloat1D(m, s)
+					sem.SetFloat1D(e, s)
 				}
 			}
 			return
@@ -894,6 +928,13 @@ func (ss *Sim) StatMicroscope() func(mode Modes, level Levels, start bool) {
 				if di == 0 {
 					trlDir.Float64("OutWin", nsamp).SetFloat1D(win, s)
 					trlDir.Float64("OutLose", nsamp).SetFloat1D(lose, s)
+				}
+			}
+			if di == 0 {
+				lbl := ev.TrialLabel()
+				tn := trlDir.StringValue("TrialName", nsamp)
+				for s := range nsamp {
+					tn.SetString1D(lbl, s)
 				}
 			}
 		}

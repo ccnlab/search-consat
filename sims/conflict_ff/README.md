@@ -21,6 +21,10 @@ Input    [1, k, 7, 7]
 
 Training runs for `Epochs` (default 100), with a final test at the end of each run, and optional tests every `TestInterval` epochs.
 
+## Parameter search
+
+`Search` in `search.go` lists the parameter search: a baseline job with the base config (job 1), and then one job per value of one parameter, with everything else at the base config. It now covers `Dropout` (training only) and `TestDropout` (testing only, a new pattern on every trial, like test-time `PFail` in the axon model), .05 to .5 in steps of .05; `Noise` (the SD of Gaussian noise on the hidden net inputs, in training and testing) at .1, .2, .5, 1, 2 and 4; and `WeightDecay`, .05 to .3 in steps of .05: 33 jobs in all. Build the sim, list the jobs with `./conflict_ff/conflict_ff -nogui -search-n`, and run them with the simmer `ParamSearch` button, whose `Args` set the base config of all the jobs, including the baseline. See the emergent `params` README for how the search works.
+
 ## Results
 
 1 run, 30 epochs of 512 trials, default params. Training is perfect by epoch 5.

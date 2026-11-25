@@ -88,6 +88,13 @@ type ParamConfig struct {
 	// training only (on every cycle for the recurrent network). 0 = none.
 	Dropout float64
 
+	// TestDropout is the dropout probability for the hidden layer units
+	// in testing only (on every cycle), with a new random pattern on every
+	// test trial, so the choice for the same item can vary across its
+	// repetitions, as with the test-time synaptic failures (PFail) of the
+	// axon model. It is independent of Dropout (training). 0 = none.
+	TestDropout float64
+
 	// Script is an interpreted script that is run to set parameters in Layer and Path
 	// sheets, by default using the "Script" set name.
 	Script string `new-window:"+" width:"100"`
@@ -114,6 +121,18 @@ type ParamConfig struct {
 	// This can be done prior to making a new release after all tests are passing.
 	// Add results to git to provide a full diff record of all params over level.
 	Good bool `nest:"+"`
+
+	// SearchN prints the total number of parameter search jobs in
+	// [Search] (search.go), then quits. The simmer ParamSearch function
+	// calls this to find how many jobs to launch (from the first line).
+	// The following lines are the labels of the jobs, in order.
+	SearchN bool
+
+	// SearchAt runs the parameter search job at this index in [Search]
+	// (search.go), in the [1..N] range (inclusive of N), so that a
+	// non-zero value means to do a parameter search. The label of the
+	// job is saved in job.label.
+	SearchAt int
 }
 
 // FieldWidget returns a special GUI widget for given field name.
@@ -127,7 +146,7 @@ type RunConfig struct {
 	// Run is the _starting_ run number, which determines the random seed.
 	// Runs counts up from there. Can do all runs in parallel by launching
 	// separate jobs with each starting Run, Runs = 1.
-	Run int `default:"0" flag:"run"`
+	Run int `default:"0"`
 
 	// Runs is the total number of runs to do when running Train, starting from Run.
 	Runs int `default:"5" min:"1"`

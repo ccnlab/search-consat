@@ -727,3 +727,37 @@ func TestMatchPairs(t *testing.T) {
 		t.Fatal("MatchSlope without pair should be NaN")
 	}
 }
+
+// TestTrialLabel checks the choice labels of TrialLabel on unequal
+// conflict items (3 slots: 2 vs 1 inputs).
+func TestTrialLabel(t *testing.T) {
+	var cfg Config
+	cfg.Defaults()
+	cfg.NSlots = 3
+	ev := &CFEnv{Configs: cfg}
+	ev.Config(0, 1, 0, true, 0)
+	ev.Init(0)
+	for ev.Cur == nil || ev.Cur.NConflict == 0 {
+		ev.Step()
+	}
+	it := ev.Cur
+	other := 0
+	for it.GroupIndex(other) >= 0 {
+		other++
+	}
+	name := ev.String()
+	for _, tc := range []struct {
+		choice int
+		want   string
+	}{
+		{it.Groups[0], fmt.Sprintf("%s  choice: %d (Majority)", name, it.Groups[0])},
+		{it.Groups[1], fmt.Sprintf("%s  choice: %d (Minority)", name, it.Groups[1])},
+		{other, fmt.Sprintf("%s  choice: %d (Intrusion)", name, other)},
+		{-1, name + "  choice: none"},
+	} {
+		ev.PrevChoice = tc.choice
+		if got := ev.TrialLabel(); got != tc.want {
+			t.Errorf("TrialLabel = %q, want %q", got, tc.want)
+		}
+	}
+}

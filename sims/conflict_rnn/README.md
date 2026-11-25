@@ -24,6 +24,10 @@ Input    [1, k, 7, 7]
 - `Decay` (default 1) is the proportion of the previous trial's final activity that decays before the next trial: the first cycle starts from (1 − `Decay`) times that activity, so the previous trial carries over through the recurrent paths, as in the axon model. 1 = each trial starts from zero. Gradients do not flow back into the previous trial.
 - Loss and optimizer: BCE loss, Adam with LR 0.001. Weights: Glorot init, with biases.
 
+## Parameter search
+
+`Search` in `search.go` lists the parameter search: a baseline job with the base config (`Decay` 1, `Noise` .2; job 1), and then one job per value of one parameter, with everything else at the base config. It covers `Decay` (.5 to .95, where the carryover effect likely changes most), `Noise` (0, .1, .5, 1, 2 and 4), `TestDropout` (testing only, a new pattern on every trial, like test-time `PFail` in the axon model) and `Dropout` (training only), .05 to .5, and `WeightDecay` (.05 to .3), in steps of .05: 43 jobs in all. Build the sim, list the jobs with `./conflict_rnn/conflict_rnn -nogui -search-n`, and run them with the simmer `ParamSearch` button, whose `Args` set the base config of all the jobs (e.g., `-decay 0.5` to search the others with carryover), including the baseline. See the emergent `params` README for how the search works.
+
 ## Results
 
 1 run, 30 epochs of 512 trials, default params. Training is perfect by epoch 5.
@@ -89,7 +93,7 @@ With noise, the choices do vary somewhat across the repetitions of the same item
 `Run.RecordCycles` (on by default, with `NCycles` > 1) reads back the activity of every layer on every settling cycle (egomlx `Network.RecordCycles`), for the same test stats as the axon model (see the conflict README):
 
 - The within-trial competition stats (`LeadSwaps`, `CommitCyc`, `LoserFrac`, `AltCorr`, `Agree50`, `Agree100`, and the Minor/Major splits), from the summed Output `Act` of each input group on each cycle.
-- The settling microscope (`Test Microscope` and `Test MicroscopeTrial` tabs): the cosine of each layer's activity on each cycle with its final activity, and of the Output with the chosen and the other group's patterns (`OutWin`, `OutLose`).
+- The settling microscope (`Test Microscope` and `Test MicroscopeTrial` tabs): the cosine of each layer's activity on each cycle with its final activity, and of the Output with the chosen and the other group's patterns (`OutWin`, `OutLose`). `Test MicroscopeTrial` is the current trial of data-parallel stream 0, titled with the trial name and its choice (also in its `TrialName` column), and `Test Microscope` is the average over the latest test.
 
 The settling cycles are mapped onto the 150-cycle axon minus phase, at 150 / `NCycles` cycles each (15 for 10 cycles), so `CommitCyc`, `Agree50`, `Agree100` and the microscope's `Cycle` axis are on the axon time scale. With only `NCycles` samples (vs 30 in the axon model), `LeadSwaps` can count fewer swaps; more cycles (see Tanh and longer settling) give a finer view. The Output is a sigmoid, so its group sums include the low activity of all the units, not just those above a threshold.
 

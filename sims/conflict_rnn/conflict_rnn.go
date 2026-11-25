@@ -37,6 +37,7 @@ import (
 	"github.com/emer/emergent/v2/env"
 	"github.com/emer/emergent/v2/looper"
 	"github.com/emer/emergent/v2/netview"
+	"github.com/emer/emergent/v2/params"
 	"github.com/emer/emergent/v2/paths"
 )
 
@@ -308,7 +309,7 @@ func (ss *Sim) ConfigNet(net *egomlx.Network) {
 
 // ApplyParams applies the network parameters, including any script,
 // and then the NCycles, Decay, WeightDecay, and hidden layer activation
-// function, Noise, and Dropout from the config,
+// function, Noise, Dropout and TestDropout from the config,
 // rebuilding the network graph for them.
 func (ss *Sim) ApplyParams() {
 	ss.Params.Script = ss.Config.Params.Script
@@ -326,6 +327,7 @@ func (ss *Sim) ApplyParams() {
 			ly.Params.Act.Fn = pc.HiddenFn
 			ly.Params.Act.Noise = pc.Noise
 			ly.Params.Act.Dropout = pc.Dropout
+			ly.Params.Act.TestDropout = pc.TestDropout
 		}
 	}
 	ss.Net.UpdateParams()
@@ -732,6 +734,20 @@ func (ss *Sim) MakeToolbar(p *tree.Plan) {
 
 // RunNoGUI runs the sim without a GUI, in a headless / terminal mode.
 func (ss *Sim) RunNoGUI() {
+	if ss.Config.Params.SearchN {
+		fmt.Println(Search.NumParams())
+		for _, lbl := range Search.Labels() {
+			fmt.Println(lbl)
+		}
+		return
+	}
+	if at := ss.Config.Params.SearchAt; at > 0 {
+		lbl, err := Search.ApplyTo(ss.Config, at-1)
+		if errors.Log(err) != nil {
+			return
+		}
+		errors.Log(params.WriteJobLabel(lbl))
+	}
 	ss.Init()
 
 	if ss.Config.Params.Note != "" {

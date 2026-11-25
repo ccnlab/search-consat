@@ -190,6 +190,36 @@ func (ev *CFEnv) String() string {
 	return fmt.Sprintf("%s c:%d", ev.Cur.String(&ev.Configs), ev.Cur.NConflict)
 }
 
+// TrialLabel returns the trial name ([CFEnv.String]) with the choice on the
+// current trial (PrevChoice, which is the current trial's choice after
+// [CFEnv.TrialStats]), for labeling plots of single trials: the chosen
+// group, and on conflict trials whether it is the Minority or Majority
+// group (nothing for a tie, which c:N already shows), or an Intrusion.
+func (ev *CFEnv) TrialLabel() string {
+	name := ev.String()
+	if ev.Cur == nil {
+		return name
+	}
+	choice := ev.PrevChoice
+	if choice < 0 {
+		return name + "  choice: none"
+	}
+	lbl := fmt.Sprintf("%s  choice: %d", name, choice)
+	if len(ev.Cur.Groups) != 2 {
+		return lbl
+	}
+	switch ci := ev.Cur.GroupIndex(choice); {
+	case ci < 0:
+		return lbl + " (Intrusion)"
+	case ev.Cur.IsTie():
+		return lbl
+	case ci == 1:
+		return lbl + " (Minority)"
+	default:
+		return lbl + " (Majority)"
+	}
+}
+
 // Step does one trial: the next test item, or a new random training item.
 func (ev *CFEnv) Step() bool {
 	ev.Trial.Incr()

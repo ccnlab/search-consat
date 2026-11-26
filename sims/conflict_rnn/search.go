@@ -4,7 +4,11 @@
 
 package conflictrnn
 
-import "github.com/emer/emergent/v2/params"
+import (
+	"fmt"
+
+	"github.com/emer/emergent/v2/params"
+)
 
 // Search is the parameter search: each job runs the sim with one of
 // these values of one parameter, with the rest at their configured
@@ -14,7 +18,81 @@ import "github.com/emer/emergent/v2/params"
 // (see emergent params/README.md). List the jobs with:
 //
 //	./conflict_rnn/conflict_rnn -nogui -search-n
+//
+// After SearchPS1, where carryover (Decay) was the only way to grade the
+// majority choice (by perseveration), and Noise and TestDropout only made
+// the choices noisy, this searches Decay below .5, and Decay combined
+// with Noise or TestDropout, to see whether the noise breaks up the
+// perseveration into more independent graded choices. The combinations
+// set two fields per job, with the fixed one in the label (Sel).
 var Search = params.Searches[*Config]{
+	// job 1: the base config, with the same args as the other jobs
+	params.Baseline[*Config](),
+
+	// carryover below .5 (In67 leveled off at about .82 from .65 to .5)
+	{Sel: "Params.Decay", Set: func(cfg *Config, v float32) {
+		cfg.Params.Decay = params.Float64(v)
+	}, Vals: func() []float32 {
+		return params.Range(0, 0.4, 0.1)
+	}},
+
+	// noise with carryover, where Decay .7 gave In67 .87, RepeatPrev 1.0
+	decayWith(0.7, "Noise", func(cfg *Config, v float32) {
+		cfg.Params.Noise = params.Float64(v)
+	}, []float32{0.5, 1, 2, 4}),
+
+	// noise with less carryover (Decay .8: In67 .97)
+	decayWith(0.8, "Noise", func(cfg *Config, v float32) {
+		cfg.Params.Noise = params.Float64(v)
+	}, []float32{1, 2, 4}),
+
+	// noise with more carryover (Decay .5: In67 .82, MinorPrevMinor .52)
+	decayWith(0.5, "Noise", func(cfg *Config, v float32) {
+		cfg.Params.Noise = params.Float64(v)
+	}, []float32{1, 2, 4}),
+
+	// test dropout with carryover: alone, it graded the choice only at
+	// .8, with competition dynamics (LeadSwaps .68)
+	decayWith(0.7, "TestDropout", func(cfg *Config, v float32) {
+		cfg.Params.TestDropout = params.Float64(v)
+	}, []float32{0.6, 0.7, 0.8}),
+
+	decayWith(0.5, "TestDropout", func(cfg *Config, v float32) {
+		cfg.Params.TestDropout = params.Float64(v)
+	}, []float32{0.6, 0.7, 0.8}),
+
+	// test dropout with high noise, without carryover
+	{Sel: "Noise=2,TestDropout", Set: func(cfg *Config, v float32) {
+		cfg.Params.Noise = 2
+		cfg.Params.TestDropout = params.Float64(v)
+	}, Vals: func() []float32 {
+		return []float32{0.7, 0.8}
+	}},
+}
+
+// decayWith returns a search over the values of another parameter, set
+// by set, with Decay at the given value, labeled Decay=decay,name=value.
+func decayWith(decay float32, name string, set func(cfg *Config, v float32), vals []float32) *params.Search[*Config] {
+	return &params.Search[*Config]{Sel: fmt.Sprintf("Decay=%g,%s", decay, name), Set: func(cfg *Config, v float32) {
+		cfg.Params.Decay = params.Float64(decay)
+		set(cfg, v)
+	}, Vals: func() []float32 { return vals }}
+}
+
+// SearchPS1 is the first search that was run (psearch1, 30 jobs:
+// conflict_rnn ore00003-32, 10 runs each, Tanh hidden layers), kept for
+// the record. Results (Test stats, vs the baseline: In67 1.0, In33 0,
+// MatchCenter 2.94, TieConsist .91, RepeatPrev .52):
+//   - Decay was the only parameter that graded the majority choice, with
+//     clean outputs: In67 .99 at .85, .92 at .75, .84 at .65, .82 at .5
+//     (MatchCenter 1.9), but through perseveration: RepeatPrev 1.0 at
+//     .6-.85, MinorPrevMinor .4-.5 (vs In33 ~.17).
+//   - TestDropout had no effect on the majority choice up to .7, In67 .95
+//     at .8 (LeadSwaps .68, CommitCyc 42), and broke down at .9
+//     (Intrusion .46, MatchCos .76).
+//   - Noise (0-4) only changed the tie choices (TieConsist 1.0 at 0 to
+//     .72 at 2-4); OutputLateral, Lateral and NCycles had no effect.
+var SearchPS1 = params.Searches[*Config]{
 	// job 1: the base config, with the same args as the other jobs
 	params.Baseline[*Config](),
 

@@ -70,13 +70,18 @@ func TestLayerConfigs(t *testing.T) {
 // the config, and from there to the network, as RunNoGUI does.
 func TestSearch(t *testing.T) {
 	lbls := Search.Labels()
-	if len(lbls) != 30 || len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: Params.Decay=0.5" || lbls[14] != "Search 15: Params.TestDropout=0.4" || lbls[26] != "Search 27: Params.OutputLateral=1" {
+	if len(lbls) != 24 || len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: Params.Decay=0" || lbls[7] != "Search 8: Decay=0.7,Noise=1" || lbls[18] != "Search 19: Decay=0.7,TestDropout=0.8" || lbls[23] != "Search 24: Noise=2,TestDropout=0.8" {
 		t.Fatalf("Search labels: %q", lbls)
+	}
+	if n := SearchPS1.NumParams(); n != 30 {
+		t.Errorf("SearchPS1 has %d jobs, want 30", n)
 	}
 	if n := Search1.NumParams(); n != 43 {
 		t.Errorf("Search1 has %d jobs, want 43", n)
 	}
-	for _, at := range []int{0, 1, 14, 26} {
+	// job index: Decay, Noise, TestDropout
+	want := map[int][3]float64{0: {1, 0.2, 0}, 1: {0, 0.2, 0}, 7: {0.7, 1, 0}, 18: {0.7, 0.2, 0.8}, 23: {1, 2, 0.8}}
+	for at, w := range want {
 		cfg, _ := egui.NewConfig[Config]()
 		cfg.GUI = false
 		cfg.Run.NData = 2
@@ -88,27 +93,16 @@ func TestSearch(t *testing.T) {
 			t.Fatalf("search job %d: %q %v", at+1, ss.searchLabel, ss.searchErr)
 		}
 		ss.Init()
-		if want := map[int]float64{0: 1, 1: 0.5}[at]; at < 2 && ss.Net.Params.Decay != want {
-			t.Errorf("job %d: Decay = %g, want %g", at+1, ss.Net.Params.Decay, want)
+		if ss.Net.Params.Decay != w[0] {
+			t.Errorf("job %d: Decay = %g, want %g", at+1, ss.Net.Params.Decay, w[0])
 		}
 		for _, ly := range ss.Net.Layers {
 			if ly.Type != egomlx.Hidden {
 				continue
 			}
-			want := 0.0
-			if at == 14 {
-				want = 0.4
+			if n, d := ly.Params.Act.Noise, ly.Params.Act.TestDropout; n != w[1] || d != w[2] {
+				t.Errorf("job %d: %s Noise, TestDropout = %g, %g, want %g, %g", at+1, ly.Name, n, d, w[1], w[2])
 			}
-			if d := ly.Params.Act.TestDropout; d != want {
-				t.Errorf("job %d: %s TestDropout = %g, want %g", at+1, ly.Name, d, want)
-			}
-		}
-		lat := false // OutputLateral: an Output -> Output path, built in ConfigSim
-		for _, pt := range ss.Net.LayerByName("Output").RecvPaths {
-			lat = lat || pt.Send.Name == "Output"
-		}
-		if lat != (at == 26) {
-			t.Errorf("job %d: Output lateral path %v", at+1, lat)
 		}
 	}
 }

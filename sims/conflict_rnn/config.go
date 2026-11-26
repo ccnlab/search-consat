@@ -51,7 +51,11 @@ type ParamConfig struct {
 	EncoderBack bool
 
 	// HiddenFn is the activation function of the hidden layers.
-	HiddenFn egomlx.ActFuns `default:"ReLU"`
+	// Tanh is bounded, which keeps the recurrent settling stable: with
+	// ReLU, the activity is unbounded, and the Back and Lateral loops
+	// can amplify it until the loss is NaN (in about 1 of 4 runs of
+	// 151 epochs, with the default params).
+	HiddenFn egomlx.ActFuns `default:"Tanh"`
 
 	// NCycles is the number of cycles of recurrent settling per trial,
 	// with the loss on the final cycle (backpropagation through time).
@@ -204,6 +208,14 @@ type LogConfig struct {
 type Config struct {
 	egui.BaseConfig
 
+	// Backend is the gomlx compute backend, in the format of the
+	// GOMLX_BACKEND environment variable, which it sets if not empty:
+	// e.g., "xla:cpu", "xla:cuda", or "go" (the pure-Go CPU backend).
+	// The default is xla:cpu, which is faster than the GPU for these small
+	// networks (on the h200). If empty, GOMLX_BACKEND is used if set, else
+	// XLA, which uses the GPU if there is one (cuda), else the CPU.
+	Backend string
+
 	// Env has environment related configuration options.
 	Env EnvConfig `display:"add-fields"`
 
@@ -219,6 +231,7 @@ type Config struct {
 
 // Defaults sets default values for the config.
 func (cfg *Config) Defaults() {
+	cfg.Backend = "xla:cpu" // a default tag would stop at the ":"
 	cfg.Name = "ConflictRNN"
 	cfg.Title = "EgoMLX recurrent conflict"
 	cfg.URL = "https://github.com/ccnlab/search-consat/blob/main/sims/conflict_rnn/README.md"

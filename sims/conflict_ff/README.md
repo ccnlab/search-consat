@@ -21,9 +21,17 @@ Input    [1, k, 7, 7]
 
 Training runs for `Epochs` (default 100), with a final test at the end of each run, and optional tests every `TestInterval` epochs.
 
+## Compute backend
+
+`Backend` (`-backend` on the command line, e.g., in the simmer `Args`) selects the gomlx compute backend, as the `GOMLX_BACKEND` environment variable does: `xla:cuda` (the GPU), `xla:cpu`, or `go` (the pure-Go CPU backend). The default is `xla:cpu`, which is faster than the GPU for these small networks: on the h200, conflict_ff training took a median 0.48 ms/trial on `xla:cpu`, 0.66 on `xla:cuda`, and 1.4 on `go`. An empty `Backend` uses `GOMLX_BACKEND` if set, else XLA, which uses the GPU if there is one. The backend in use is printed at the start of a `-nogui` run (in the simmer `job.0.out`).
+
 ## Parameter search
 
-`Search` in `search.go` lists the parameter search: a baseline job with the base config (job 1), and then one job per value of one parameter, with everything else at the base config. It now covers `Dropout` (training only) and `TestDropout` (testing only, a new pattern on every trial, like test-time `PFail` in the axon model), .05 to .5 in steps of .05; `Noise` (the SD of Gaussian noise on the hidden net inputs, in training and testing) at .1, .2, .5, 1, 2 and 4; and `WeightDecay`, .05 to .3 in steps of .05: 33 jobs in all. Build the sim, list the jobs with `./conflict_ff/conflict_ff -nogui -search-n`, and run them with the simmer `ParamSearch` button, whose `Args` set the base config of all the jobs, including the baseline. See the emergent `params` README for how the search works.
+`Search` in `search.go` lists the parameter search: a baseline job with the base config (job 1), and then one job per value of one parameter, with everything else at the base config. Build the sim, list the jobs with `./conflict_ff/conflict_ff -nogui -search-n`, and run them with the simmer `ParamSearch` button, whose `Args` set the base config of all the jobs, including the baseline. See the emergent `params` README for how the search works.
+
+Round 1 (`Search1`, 33 jobs, no Args) searched `Dropout` (training only) and `TestDropout` (testing only, a new pattern on every trial, like test-time `PFail` in the axon model), .05 to .5; `Noise` (hidden net inputs, training and testing), .1 to 4; and `WeightDecay`, .05 to .3. Only `TestDropout` graded the choices of unequal conflicts (at .5: In67 .967, P67 .904, P33 .031), against the pfail .4 target of In67 .68; training `Dropout` and `WeightDecay` made them more deterministic, `Noise` only randomized the ties, and there were no intrusions.
+
+Round 2 (`Search`, 19 jobs), run with the Args `-test-dropout 0.5`: `TestDropout` from .55 to .9; `OutNoise` (Output net inputs, training and testing) at .25, .5, 1, 2, 4 and 8; `HiddenSize` 5, 7 and 10 (15 in the base config); and `NHidden` 1 (2 in the base config).
 
 ## Results
 

@@ -77,7 +77,7 @@ var PathParams = axon.PathSheets{
 				pt.Learn.DWt.SubMean = 1
 				pt.SWts.Init.SPct = 1.0 // .5 >= 1 here -- 0.5 more reliable, 1.0 faster..
 				// NOTE: MUST turn on Config.Params.TestSynFail for this to affect testing:
-				pt.Com.PFail = 0.4            // 0.4 most linear
+				pt.Com.PFail = 0.2            // 0.4 most linear
 				pt.Com.PFailSWt.SetBool(true) // swt is essential!
 			}},
 		{Sel: ".BackPath", Doc: "top-down back-pathways MUST have lower relative weight scale, otherwise network hallucinates",

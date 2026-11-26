@@ -64,6 +64,12 @@ type ParamConfig struct {
 	// 0 = none.
 	Noise float64
 
+	// OutNoise is the standard deviation of the Gaussian noise added to the
+	// net input of the Output layer units, in training and testing, which
+	// acts on the choice more directly than Noise on the hidden layers
+	// (whose noise is averaged over many units). 0 = none.
+	OutNoise float64
+
 	// Script is an interpreted script that is run to set parameters in Layer and Path
 	// sheets, by default using the "Script" set name.
 	Script string `new-window:"+" width:"100"`
@@ -166,6 +172,14 @@ type LogConfig struct {
 type Config struct {
 	egui.BaseConfig
 
+	// Backend is the gomlx compute backend, in the format of the
+	// GOMLX_BACKEND environment variable, which it sets if not empty:
+	// e.g., "xla:cpu", "xla:cuda", or "go" (the pure-Go CPU backend).
+	// The default is xla:cpu, which is faster than the GPU for these small
+	// networks (on the h200). If empty, GOMLX_BACKEND is used if set, else
+	// XLA, which uses the GPU if there is one (cuda), else the CPU.
+	Backend string
+
 	// Env has environment related configuration options.
 	Env EnvConfig `display:"add-fields"`
 
@@ -181,6 +195,7 @@ type Config struct {
 
 // Defaults sets default values for the config.
 func (cfg *Config) Defaults() {
+	cfg.Backend = "xla:cpu" // a default tag would stop at the ":"
 	cfg.Name = "ConflictFF"
 	cfg.Title = "EgoMLX feedforward conflict"
 	cfg.URL = "https://github.com/ccnlab/search-consat/blob/main/sims/conflict_ff/README.md"

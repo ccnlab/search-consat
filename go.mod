@@ -6,7 +6,7 @@ require (
 	cogentcore.org/core v0.5.53
 	cogentcore.org/lab v0.2.28
 	github.com/emer/axon/v2 v2.0.17
-	github.com/emer/egomlx v0.1.5
+	github.com/emer/egomlx v0.1.6
 	github.com/emer/emergent/v2 v2.0.8
 )
 

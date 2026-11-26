@@ -18,6 +18,54 @@ var Search = params.Searches[*Config]{
 	// job 1: the base config, with the same args as the other jobs
 	params.Baseline[*Config](),
 
+	// Round 2, from round 1 (Search1): TestDropout was the only parameter
+	// that graded the choices of unequal conflicts (In67 .967 at .5, vs
+	// the .68 target), with no intrusions anywhere. Run with the simmer
+	// Args -test-dropout 0.5, so the other parameters are tested at the
+	// best round 1 value.
+
+	// test-only dropout of the hidden units, above the round 1 range
+	{Sel: "Params.TestDropout", Set: func(cfg *Config, v float32) {
+		cfg.Params.TestDropout = params.Float64(v)
+	}, Vals: func() []float32 {
+		return params.Range(0.55, 0.9, 0.05)
+	}},
+
+	// Gaussian noise SD on the Output net inputs, in training and testing:
+	// 0 in the base config. It acts on the choice directly, unlike the
+	// hidden Noise, which only randomized the ties in round 1.
+	{Sel: "Params.OutNoise", Set: func(cfg *Config, v float32) {
+		cfg.Params.OutNoise = params.Float64(v)
+	}, Vals: func() []float32 {
+		return []float32{0.25, 0.5, 1, 2, 4, 8}
+	}},
+
+	// smaller hidden layers (15x15 in the base config), so that the test
+	// dropout is averaged over fewer units
+	{Sel: "Params.HiddenSize", Set: func(cfg *Config, v float32) {
+		cfg.Params.HiddenSize = int(v)
+	}, Vals: func() []float32 {
+		return []float32{5, 7, 10}
+	}},
+
+	// one hidden layer (2 in the base config)
+	{Sel: "Params.NHidden", Set: func(cfg *Config, v float32) {
+		cfg.Params.NHidden = int(v)
+	}, Vals: func() []float32 {
+		return []float32{1}
+	}},
+}
+
+// Search1 is the round 1 search (33 jobs, simmer jobs ore00008-40, with no
+// Args), kept for the record. Results (final test, mean of 10 runs):
+// training Dropout and WeightDecay made the choices more deterministic
+// (In67 1.0); hidden Noise up to 4 randomized only the ties (TieConsist
+// .58, In67 .995); TestDropout graded them steadily up to .5 (In67 .967,
+// P67 .904, P33 .031, Consist .84). Intrusions were ~0 throughout.
+var Search1 = params.Searches[*Config]{
+	// job 1: the base config, with the same args as the other jobs
+	params.Baseline[*Config](),
+
 	// training-only dropout of the hidden units: 0 in the base config
 	{Sel: "Params.Dropout", Set: func(cfg *Config, v float32) {
 		cfg.Params.Dropout = params.Float64(v)

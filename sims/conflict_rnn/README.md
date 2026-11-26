@@ -9,9 +9,9 @@ The same layers as conflict_ff, with the bidirectional connectivity of the axon 
 ```
 Output   [NPerOutput, NGroups]   Target (sigmoid)
    ↕
-Hidden2  [15, 15]                (ReLU)
+Hidden2  [15, 15]                (tanh)
    ↕
-Hidden1  [15, 15]                (ReLU)
+Hidden1  [15, 15]                (tanh)
    ↑
 Input    [1, k, 7, 7]
 ```
@@ -20,13 +20,21 @@ Input    [1, k, 7, 7]
 - `NEncoder` (default 0) adds encoder layers below the hidden layers (`Encoder1`, ...), as in the axon model: one pool per input slot, of size `EncoderSize`, with pool-to-pool (one-to-one) Forward and Back connections, so each slot is encoded separately. `EncoderLateral` adds lateral connections within each pool. With both encoder and hidden layers, `Shortcut` adds full Forward connections from the last encoder layer to the Output, and `EncoderBack` full Back connections from the Output to it. Either `NEncoder` or `NHidden` can be 0.
 - The network settles for `NCycles` (default 10) cycles, using egomlx recurrent settling: on each cycle, Forward paths use the sender's current-cycle activity, and Back and Lateral paths its previous-cycle activity (zero on the first cycle). The weights are shared across cycles, and the loss is on the final cycle, so learning is backpropagation through time.
 - `Noise` (default 0.2) is the standard deviation of Gaussian noise added to the net input of the hidden layers on every cycle, in training and testing. With the default `Decay` of 1, it is the only source of variability across repetitions of the same item: each trial starts from zero activity, with no carryover between trials.
-- `HiddenFn` (default ReLU) is the activation function of the hidden layers.
+- `HiddenFn` (default Tanh) is the activation function of the hidden layers. Tanh activity is bounded, which keeps the recurrent settling stable. ReLU activity is unbounded, and the Back and Lateral loops can amplify it: the first 10-run baseline on the cluster (ReLU, 151 epochs) had hidden activity growing to 40–55 in the healthy runs, and in run 3 it grew to about 600 in the first epoch and millions by the second, until the loss became NaN at epoch 59. ReLU learned the task as well as Tanh in short runs (MatchCos 1.0 by epoch 15), so the results below with ReLU are still valid, but runs with it can blow up.
 - `Decay` (default 1) is the proportion of the previous trial's final activity that decays before the next trial: the first cycle starts from (1 − `Decay`) times that activity, so the previous trial carries over through the recurrent paths, as in the axon model. 1 = each trial starts from zero. Gradients do not flow back into the previous trial.
 - Loss and optimizer: BCE loss, Adam with LR 0.001. Weights: Glorot init, with biases.
 
+## Compute backend
+
+`Backend` (`-backend` on the command line, e.g., in the simmer `Args`) selects the gomlx compute backend, as the `GOMLX_BACKEND` environment variable does: `xla:cuda` (the GPU), `xla:cpu`, or `go` (the pure-Go CPU backend). The default is `xla:cpu`, which is faster than the GPU for these small networks: on the h200, conflict_ff training took a median 0.48 ms/trial on `xla:cpu`, 0.66 on `xla:cuda`, and 1.4 on `go`. An empty `Backend` uses `GOMLX_BACKEND` if set, else XLA, which uses the GPU if there is one. The backend in use is printed at the start of a `-nogui` run (in the simmer `job.0.out`).
+
 ## Parameter search
 
-`Search` in `search.go` lists the parameter search: a baseline job with the base config (`Decay` 1, `Noise` .2; job 1), and then one job per value of one parameter, with everything else at the base config. It covers `Decay` (.5 to .95, where the carryover effect likely changes most), `Noise` (0, .1, .5, 1, 2 and 4), `TestDropout` (testing only, a new pattern on every trial, like test-time `PFail` in the axon model) and `Dropout` (training only), .05 to .5, and `WeightDecay` (.05 to .3), in steps of .05: 43 jobs in all. Build the sim, list the jobs with `./conflict_rnn/conflict_rnn -nogui -search-n`, and run them with the simmer `ParamSearch` button, whose `Args` set the base config of all the jobs (e.g., `-decay 0.5` to search the others with carryover), including the baseline. See the emergent `params` README for how the search works.
+`Search` in `search.go` lists the parameter search: a baseline job with the base config (`Decay` 1, `Noise` .2; job 1), and then one job per value of one parameter, with everything else at the base config. Build the sim, list the jobs with `./conflict_rnn/conflict_rnn -nogui -search-n`, and run them with the simmer `ParamSearch` button, whose `Args` set the base config of all the jobs (e.g., `-decay 0.5` to search the others with carryover), including the baseline. See the emergent `params` README for how the search works.
+
+It is based on the conflict_ff searches, where test dropout graded the choices only by making the output noisy (at .8: In67 .88 and MatchCenter 2.2, vs axon pfail .4: In67 .67 and MatchCenter 1.0, at about the same MatchCos), and training `Dropout` and `WeightDecay` made the choices more deterministic. It covers `Decay` (.5 to .95, for the carryover, MinorPrevMinor), `TestDropout` (.1 to .9), `Noise` (0, .1, .5, 1, 2 and 4), `OutputLateral` and `Lateral` (lateral connections within the Output and the hidden layers, for competition during settling), and `NCycles` 5 and 20 (10 in the base config): 30 jobs in all. The first version, with `Dropout` and `WeightDecay`, is kept as `Search1`.
+
+`config_job.toml` has the run settings of the simmer jobs: 10 runs of 151 epochs, testing every 10 epochs.
 
 ## Results
 

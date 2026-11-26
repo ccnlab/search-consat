@@ -70,20 +70,23 @@ func TestLayerConfigs(t *testing.T) {
 // the config, and from there to the network, as RunNoGUI does.
 func TestSearch(t *testing.T) {
 	lbls := Search.Labels()
-	if len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: Params.Decay=0.5" || lbls[24] != "Search 25: Params.TestDropout=0.4" {
+	if len(lbls) != 30 || len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: Params.Decay=0.5" || lbls[14] != "Search 15: Params.TestDropout=0.4" || lbls[26] != "Search 27: Params.OutputLateral=1" {
 		t.Fatalf("Search labels: %q", lbls)
 	}
-	for _, at := range []int{0, 1, 24} {
+	if n := Search1.NumParams(); n != 43 {
+		t.Errorf("Search1 has %d jobs, want 43", n)
+	}
+	for _, at := range []int{0, 1, 14, 26} {
 		cfg, _ := egui.NewConfig[Config]()
 		cfg.GUI = false
 		cfg.Run.NData = 2
-		lbl, err := Search.ApplyTo(cfg, at)
-		if err != nil || lbl != lbls[at] {
-			t.Fatalf("ApplyTo %d: %q %v", at, lbl, err)
-		}
+		cfg.Params.SearchAt = at + 1 // applied in ConfigSim, as with -search-at
 		ss := &Sim{}
 		ss.SetConfig(cfg)
 		ss.ConfigSim()
+		if ss.searchErr != nil || ss.searchLabel != lbls[at] {
+			t.Fatalf("search job %d: %q %v", at+1, ss.searchLabel, ss.searchErr)
+		}
 		ss.Init()
 		if want := map[int]float64{0: 1, 1: 0.5}[at]; at < 2 && ss.Net.Params.Decay != want {
 			t.Errorf("job %d: Decay = %g, want %g", at+1, ss.Net.Params.Decay, want)
@@ -93,12 +96,81 @@ func TestSearch(t *testing.T) {
 				continue
 			}
 			want := 0.0
-			if at == 24 {
+			if at == 14 {
 				want = 0.4
 			}
 			if d := ly.Params.Act.TestDropout; d != want {
 				t.Errorf("job %d: %s TestDropout = %g, want %g", at+1, ly.Name, d, want)
 			}
 		}
+		lat := false // OutputLateral: an Output -> Output path, built in ConfigSim
+		for _, pt := range ss.Net.LayerByName("Output").RecvPaths {
+			lat = lat || pt.Send.Name == "Output"
+		}
+		if lat != (at == 26) {
+			t.Errorf("job %d: Output lateral path %v", at+1, lat)
+		}
+	}
+}
+
+// TestBackend checks that Config.Backend selects the compute backend
+// (the pure-Go one here), through GOMLX_BACKEND.
+func TestBackend(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", "") // restored after the test
+	cfg, _ := egui.NewConfig[Config]()
+	cfg.GUI = false
+	cfg.Run.NData = 2
+	if cfg.Backend != "xla:cpu" {
+		t.Errorf("default Backend %q, want xla:cpu", cfg.Backend)
+	}
+	cfg.Backend = "go"
+	ss := &Sim{}
+	ss.SetConfig(cfg)
+	ss.ConfigSim()
+	defer ss.Net.Backend.Finalize()
+	if nm := ss.Net.Backend.Name(); nm != "Go Backend" {
+		t.Errorf("Backend %q (%s), want Go Backend", nm, ss.Net.Backend.Description())
+	}
+}
+
+// TestStable checks that the default hidden layers are Tanh, whose
+// activity stays bounded over training: with ReLU, the recurrent loops
+// can amplify the activity until the loss is NaN.
+func TestStable(t *testing.T) {
+	cfg, _ := egui.NewConfig[Config]()
+	cfg.GUI = false
+	cfg.Run.NData = 16
+	cfg.Run.Trials = 512
+	cfg.Run.Epochs = 5
+	cfg.Run.Runs = 2
+	cfg.Run.TestInterval = 1000
+	cfg.Env.Env = map[string]any{"TestPerLevel": 4, "TestReps": 1}
+	if cfg.Params.HiddenFn != egomlx.Tanh {
+		t.Errorf("default HiddenFn = %v, want Tanh", cfg.Params.HiddenFn)
+	}
+	ss := &Sim{}
+	ss.SetConfig(cfg)
+	ss.ConfigSim()
+	ss.Loops.Run(Train)
+	for _, ly := range ss.Net.Layers {
+		if ly.Type == egomlx.Hidden && ly.Params.Act.Fn != egomlx.Tanh {
+			t.Errorf("%s Act.Fn = %v, want Tanh", ly.Name, ly.Params.Act.Fn)
+		}
+	}
+	run := ss.Stats.Dir("Train/Run")
+	for _, nm := range []string{"Hidden1_ActMax", "Hidden2_ActMax", "MatchCos"} {
+		vals := run.Float64(nm).Values
+		if len(vals) != 2 {
+			t.Fatalf("%s: %d runs, want 2", nm, len(vals))
+		}
+		for ri, v := range vals {
+			t.Logf("run %d %s: %.3f", ri, nm, v)
+			if math.IsNaN(v) || math.Abs(v) > 1 {
+				t.Errorf("run %d %s = %g, want within [-1, 1]", ri, nm, v)
+			}
+		}
+	}
+	if v := run.Float64("MatchCos").Values; v[0] < 0.9 || v[1] < 0.9 {
+		t.Errorf("MatchCos %v: not learning", v)
 	}
 }

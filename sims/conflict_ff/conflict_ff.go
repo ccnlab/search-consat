@@ -89,6 +89,13 @@ type Sim struct {
 	// simulation configuration parameters -- set by .toml config file and / or args
 	Config *Config `new-window:"+"`
 
+	// searchLabel is the label of the search job applied to Config
+	// ([Sim.applySearch]).
+	searchLabel string
+
+	// searchErr is the error from applying the search job, if any.
+	searchErr error
+
 	// Net is the network: click to view / edit parameters for layers, paths, etc.
 	Net *egomlx.Network `new-window:"+" display:"no-inline"`
 
@@ -141,9 +148,10 @@ func (ss *Sim) Body() *core.Body { return ss.GUI.Body }
 
 // ConfigSim initializes the config-dependent parts of the sim.
 func (ss *Sim) ConfigSim() {
+	ss.applySearch()
 	ss.Root, _ = tensorfs.NewDir("Root")
 	tensorfs.CurRoot = ss.Root
-	ss.Net = egomlx.NewNetwork(ss.Config.Name)
+	ss.Net = ss.newNetwork()
 	ss.configParams()
 	ss.RandSeeds.Init(100) // max 100 runs
 	ss.InitRandSeed(0)
@@ -156,6 +164,28 @@ func (ss *Sim) ConfigSim() {
 		ss.Net.SaveParamsSnapshot(&ss.Config, ss.Config.Params.Good)
 		os.Exit(0)
 	}
+}
+
+// applySearch applies the search job of Params.SearchAt (1-based, if > 0)
+// to the Config, once, at the start of ConfigSim, before anything is
+// configured from it, so that the job can change the structure of the
+// network (e.g., HiddenSize), not only the parameters that ApplyParams
+// sets at Init.
+func (ss *Sim) applySearch() {
+	at := ss.Config.Params.SearchAt
+	if at <= 0 || ss.searchLabel != "" || ss.searchErr != nil {
+		return
+	}
+	ss.searchLabel, ss.searchErr = Search.ApplyTo(ss.Config, at-1)
+}
+
+// newNetwork returns a new network, on the [Config.Backend]
+// compute backend.
+func (ss *Sim) newNetwork() *egomlx.Network {
+	if b := ss.Config.Backend; b != "" {
+		os.Setenv("GOMLX_BACKEND", b)
+	}
+	return egomlx.NewNetwork(ss.Config.Name)
 }
 
 func (ss *Sim) configParams() {
@@ -171,7 +201,7 @@ func (ss *Sim) ReConfig() {
 	errors.Log(ss.Root.DeleteAll())
 	ss.configParams()
 	old := ss.Net
-	ss.Net = egomlx.NewNetwork(ss.Config.Name)
+	ss.Net = ss.newNetwork()
 	ss.InitRandSeed(0)
 	ss.ConfigEnv()
 	ss.ConfigNet(ss.Net)
@@ -292,6 +322,9 @@ func (ss *Sim) ApplyParams() {
 			ly.Params.Act.Dropout = pc.Dropout
 			ly.Params.Act.TestDropout = pc.TestDropout
 			ly.Params.Act.Noise = pc.Noise
+		}
+		if ly.Type == egomlx.Target {
+			ly.Params.Act.Noise = pc.OutNoise
 		}
 	}
 	ss.Net.UpdateParams()
@@ -691,13 +724,13 @@ func (ss *Sim) RunNoGUI() {
 		}
 		return
 	}
-	if at := ss.Config.Params.SearchAt; at > 0 {
-		lbl, err := Search.ApplyTo(ss.Config, at-1)
-		if errors.Log(err) != nil {
+	if ss.Config.Params.SearchAt > 0 { // applied in ConfigSim
+		if errors.Log(ss.searchErr) != nil {
 			return
 		}
-		errors.Log(params.WriteJobLabel(lbl))
+		errors.Log(params.WriteJobLabel(ss.searchLabel))
 	}
+	fmt.Println("compute backend:", ss.Net.Backend.Description()) // see Config.Backend
 	ss.Init()
 
 	if ss.Config.Params.Note != "" {

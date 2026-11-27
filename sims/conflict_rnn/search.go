@@ -19,16 +19,47 @@ import (
 //
 //	./conflict_rnn/conflict_rnn -nogui -search-n
 //
-// After SearchPS3, where TestNoise (with Decay 1) gave minority choices
-// that were independent of the previous choice, with competition, from
-// TestNoise 2 (In67 .95, Intrusion .005) to 4 (In67 .68, but Intrusion
-// .68), this maps TestNoise from 2 to 4, and tries to keep the intrusions
-// down at high noise: with lateral connections (cleanup), more or fewer
-// settling cycles (averaging the noise), training noise (learning to
-// override it) and some carryover (Decay .3).
+// After SearchPS4, where TestNoise in both hidden layers graded the
+// choice toward the target only at the cost of intrusions (the output
+// pattern itself broke down), this puts the TestNoise in Hidden1 only, so
+// that Hidden2 can clean it up, over a wider range (the noise is diluted
+// by the cleanup), with Hidden2 only for comparison.
 // The combinations set the fixed fields in each job, which are in the
 // label (Sel).
 var Search = params.Searches[*Config]{
+	// job 1: the base config, with the same args as the other jobs
+	params.Baseline[*Config](),
+
+	testNoiseWith("TestNoiseLayers=Hidden1", func(cfg *Config) { cfg.Params.TestNoiseLayers = "Hidden1" }, []float32{2, 3, 4, 5, 6, 8, 10, 12}),
+	testNoiseWith("TestNoiseLayers=Hidden2", func(cfg *Config) { cfg.Params.TestNoiseLayers = "Hidden2" }, []float32{2, 3, 4, 6, 8}),
+}
+
+// testNoiseWith returns a search over TestNoise values, with the fixed
+// settings applied by fix, labeled fixed,TestNoise=value.
+func testNoiseWith(fixed string, fix func(cfg *Config), vals []float32) *params.Search[*Config] {
+	return &params.Search[*Config]{Sel: fixed + ",TestNoise", Set: func(cfg *Config, v float32) {
+		fix(cfg)
+		setTestNoise(cfg, v)
+	}, Vals: func() []float32 { return vals }}
+}
+
+// SearchPS4 is the fourth search that was run (psearch4, 22 jobs:
+// conflict_rnn ore00082-103, 10 runs each), kept for the record. Results:
+//   - TestNoise (both hidden layers, Decay 1) from 2.25 to 3.5 graded the
+//     valid choices smoothly (TestNoise 3: In83 .94, In67 .78, In17 .07,
+//     MatchCenter 1.67), independent of the previous choice (MinorPrev
+//     about equal after minor, major, other), with competition (LeadSwaps
+//     2.5), but the intrusions rose along the same curve (.02 at 2.25,
+//     .29 at 3, .52 at 3.5): the output pattern itself broke down (P100
+//     .72 at 3).
+//   - OutputLateral was slightly better (TestNoise 3: In67 .79, Intrusion
+//     .26), Lateral worse; NCycles 5 or 20 made no difference; training
+//     Noise 1 moved along the same curve; Decay .3 was slightly worse and
+//     history dependent.
+//
+// It mapped TestNoise from 2 to 4, and tried to keep the intrusions down
+// with laterals, NCycles, training Noise and Decay .3.
+var SearchPS4 = params.Searches[*Config]{
 	// job 1: the base config, with the same args as the other jobs
 	params.Baseline[*Config](),
 
@@ -52,15 +83,6 @@ var Search = params.Searches[*Config]{
 
 	// some carryover (Decay .3 was not perseverative)
 	decayWith(0.3, "TestNoise", setTestNoise, []float32{3, 4}),
-}
-
-// testNoiseWith returns a search over TestNoise values, with the fixed
-// settings applied by fix, labeled fixed,TestNoise=value.
-func testNoiseWith(fixed string, fix func(cfg *Config), vals []float32) *params.Search[*Config] {
-	return &params.Search[*Config]{Sel: fixed + ",TestNoise", Set: func(cfg *Config, v float32) {
-		fix(cfg)
-		setTestNoise(cfg, v)
-	}, Vals: func() []float32 { return vals }}
 }
 
 // SearchPS3 is the third search that was run (psearch3, 24 jobs:

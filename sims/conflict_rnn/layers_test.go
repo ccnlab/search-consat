@@ -70,22 +70,16 @@ func TestLayerConfigs(t *testing.T) {
 // the config, and from there to the network, as RunNoGUI does.
 func TestSearch(t *testing.T) {
 	lbls := Search.Labels()
-	if len(lbls) != 22 || len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: Params.TestNoise=2.25" || lbls[6] != "Search 7: Params.TestNoise=3.5" || lbls[8] != "Search 9: OutputLateral=true,TestNoise=3" || lbls[15] != "Search 16: NCycles=20,TestNoise=4" || lbls[18] != "Search 19: Noise=1,TestNoise=3" || lbls[21] != "Search 22: Decay=0.3,TestNoise=4" {
+	if len(lbls) != 14 || len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: TestNoiseLayers=Hidden1,TestNoise=2" || lbls[8] != "Search 9: TestNoiseLayers=Hidden1,TestNoise=12" || lbls[9] != "Search 10: TestNoiseLayers=Hidden2,TestNoise=2" || lbls[13] != "Search 14: TestNoiseLayers=Hidden2,TestNoise=8" {
 		t.Fatalf("Search labels: %q", lbls)
 	}
-	for nm, n := range map[string]int{"SearchPS3": SearchPS3.NumParams(), "SearchPS2": SearchPS2.NumParams(), "SearchPS1": SearchPS1.NumParams(), "Search1": Search1.NumParams()} {
-		if want := map[string]int{"SearchPS3": 24, "SearchPS2": 24, "SearchPS1": 30, "Search1": 43}[nm]; n != want {
+	for nm, n := range map[string]int{"SearchPS4": SearchPS4.NumParams(), "SearchPS3": SearchPS3.NumParams(), "SearchPS2": SearchPS2.NumParams(), "SearchPS1": SearchPS1.NumParams(), "Search1": Search1.NumParams()} {
+		if want := map[string]int{"SearchPS4": 22, "SearchPS3": 24, "SearchPS2": 24, "SearchPS1": 30, "Search1": 43}[nm]; n != want {
 			t.Errorf("%s has %d jobs, want %d", nm, n, want)
 		}
 	}
-	// job index: Decay, Noise, TestNoise, TestDropout
-	want := map[int][4]float64{0: {1, 0.2, 0, 0}, 1: {1, 0.2, 2.25, 0}, 8: {1, 0.2, 3, 0}, 10: {1, 0.2, 2, 0}, 15: {1, 0.2, 4, 0}, 18: {1, 1, 3, 0}, 21: {0.3, 0.2, 4, 0}}
-	// job index: OutputLateral, Lateral, NCycles
-	type netCfg struct {
-		outLat, lat bool
-		ncyc        int
-	}
-	wantNet := map[int]netCfg{0: {false, false, 10}, 8: {true, false, 10}, 10: {false, true, 10}, 15: {false, false, 20}}
+	// job index: TestNoise of Hidden1, Hidden2
+	want := map[int][2]float64{0: {0, 0}, 1: {2, 0}, 8: {12, 0}, 9: {0, 2}, 13: {0, 8}}
 	for at, w := range want {
 		cfg, _ := egui.NewConfig[Config]()
 		cfg.GUI = false
@@ -97,23 +91,14 @@ func TestSearch(t *testing.T) {
 		if ss.searchErr != nil || ss.searchLabel != lbls[at] {
 			t.Fatalf("search job %d: %q %v", at+1, ss.searchLabel, ss.searchErr)
 		}
-		if wn, ok := wantNet[at]; ok {
-			pc := &ss.Config.Params
-			if got := (netCfg{pc.OutputLateral, pc.Lateral, pc.NCycles}); got != wn {
-				t.Errorf("job %d: OutputLateral, Lateral, NCycles = %v, want %v", at+1, got, wn)
-			}
-		}
 		ss.Init()
-		if ss.Net.Params.Decay != w[0] {
-			t.Errorf("job %d: Decay = %g, want %g", at+1, ss.Net.Params.Decay, w[0])
+		if ss.Net.Params.Decay != 1 {
+			t.Errorf("job %d: Decay = %g, want 1", at+1, ss.Net.Params.Decay)
 		}
-		for _, ly := range ss.Net.Layers {
-			if ly.Type != egomlx.Hidden {
-				continue
-			}
-			ap := ly.Params.Act
-			if got := [3]float64{ap.Noise, ap.TestNoise, ap.TestDropout}; got != [3]float64(w[1:]) {
-				t.Errorf("job %d: %s Noise, TestNoise, TestDropout = %v, want %v", at+1, ly.Name, got, w[1:])
+		for i, nm := range []string{"Hidden1", "Hidden2"} {
+			ap := ss.Net.LayerByName(nm).Params.Act
+			if ap.Noise != 0.2 || ap.TestNoise != w[i] || ap.TestDropout != 0 {
+				t.Errorf("job %d: %s Noise, TestNoise, TestDropout = %g, %g, %g, want .2, %g, 0", at+1, nm, ap.Noise, ap.TestNoise, ap.TestDropout, w[i])
 			}
 		}
 	}

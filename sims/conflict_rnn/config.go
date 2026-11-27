@@ -74,6 +74,11 @@ type ParamConfig struct {
 	// Noise, so the total SD in testing is sqrt(Noise^2 + TestNoise^2).
 	TestNoise float64
 
+	// TestNoiseLayers are the names of the hidden layers that get the
+	// TestNoise, separated by spaces (e.g., "Hidden1"), so that the
+	// layers after them can clean up the noise. Empty = all hidden layers.
+	TestNoiseLayers string
+
 	// Decay is the proportion of the final activity of the previous trial
 	// that decays before the next trial: the first cycle starts from
 	// (1 - Decay) times that activity, so the previous trial carries over

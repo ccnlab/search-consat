@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
+	"strings"
 
 	"cogentcore.org/core/base/errors"
 	"cogentcore.org/core/base/metadata"
@@ -339,7 +341,7 @@ func (ss *Sim) ConfigNet(net *egomlx.Network) {
 
 // ApplyParams applies the network parameters, including any script,
 // and then the NCycles, Decay, WeightDecay, and hidden layer activation
-// function, Noise, TestNoise, Dropout and TestDropout from the config,
+// function, Noise, TestNoise (on the TestNoiseLayers), Dropout and TestDropout from the config,
 // rebuilding the network graph for them.
 func (ss *Sim) ApplyParams() {
 	ss.Params.Script = ss.Config.Params.Script
@@ -356,7 +358,11 @@ func (ss *Sim) ApplyParams() {
 		if ly.Type == egomlx.Hidden {
 			ly.Params.Act.Fn = pc.HiddenFn
 			ly.Params.Act.Noise = pc.Noise
-			ly.Params.Act.TestNoise = pc.TestNoise
+			if pc.TestNoiseLayers == "" || slices.Contains(strings.Fields(pc.TestNoiseLayers), ly.Name) {
+				ly.Params.Act.TestNoise = pc.TestNoise
+			} else {
+				ly.Params.Act.TestNoise = 0
+			}
 			ly.Params.Act.Dropout = pc.Dropout
 			ly.Params.Act.TestDropout = pc.TestDropout
 		}

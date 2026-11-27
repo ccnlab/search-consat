@@ -26,6 +26,28 @@ import (
 // by the cleanup), with Hidden2 only for comparison.
 // The combinations set the fixed fields in each job, which are in the
 // label (Sel).
+//
+// This was the fifth and last search that was run (psearch5, 14 jobs:
+// conflict_rnn ore00104-117, 10 runs each). Results:
+//   - TestNoise in Hidden1 only had about half the intrusions of
+//     TestNoise in both hidden layers (SearchPS4) at the same In67 (e.g.,
+//     In67 .77: Intrusion .17 vs about .32), with about twice the SD for
+//     the same In67, but along the same kind of tradeoff curve: In67 .91,
+//     Intrusion .015 at 4; .84, .07 at 5; .77, .17 at 6; .71, .36 at 8;
+//     .65 (MatchCenter .89), .48 at 10 (P100 .43).
+//   - TestNoise in Hidden2 only was worse than in both layers (In67 .82,
+//     Intrusion .38 at 8): with no layer to clean it up, the noise
+//     corrupts the output directly.
+//   - At all levels, the minority choices were independent of the
+//     previous choice (MinorPrev equal after minor, major, other;
+//     RepeatPrev .50), with competition (LeadSwaps 1-3), and graded
+//     (In83 > In67 > In50 > In33 > In17).
+//
+// Conclusion of the searches: in this network, noise is the only generic
+// way found to grade the choice toward the axon target (In67 .67,
+// MatchCenter 1.0) without perseveration, and each level of noise that
+// grades the choice corrupts a matching proportion of the outputs;
+// moving the noise away from the output only shifts that tradeoff.
 var Search = params.Searches[*Config]{
 	// job 1: the base config, with the same args as the other jobs
 	params.Baseline[*Config](),

@@ -70,17 +70,16 @@ func TestLayerConfigs(t *testing.T) {
 // the config, and from there to the network, as RunNoGUI does.
 func TestSearch(t *testing.T) {
 	lbls := Search.Labels()
-	if len(lbls) != 24 || len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: Params.Decay=0" || lbls[7] != "Search 8: Decay=0.7,Noise=1" || lbls[18] != "Search 19: Decay=0.7,TestDropout=0.8" || lbls[23] != "Search 24: Noise=2,TestDropout=0.8" {
+	if len(lbls) != 24 || len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: Params.TestNoise=0.25" || lbls[8] != "Search 9: Decay=0.5,TestNoise=1" || lbls[18] != "Search 19: Noise=0,TestNoise=0.5" || lbls[21] != "Search 22: Decay=0.5,TestDropout=0.6,TestNoise=1" || lbls[23] != "Search 24: Decay=0.5,TestDropout=0.8" {
 		t.Fatalf("Search labels: %q", lbls)
 	}
-	if n := SearchPS1.NumParams(); n != 30 {
-		t.Errorf("SearchPS1 has %d jobs, want 30", n)
+	for nm, n := range map[string]int{"SearchPS2": SearchPS2.NumParams(), "SearchPS1": SearchPS1.NumParams(), "Search1": Search1.NumParams()} {
+		if want := map[string]int{"SearchPS2": 24, "SearchPS1": 30, "Search1": 43}[nm]; n != want {
+			t.Errorf("%s has %d jobs, want %d", nm, n, want)
+		}
 	}
-	if n := Search1.NumParams(); n != 43 {
-		t.Errorf("Search1 has %d jobs, want 43", n)
-	}
-	// job index: Decay, Noise, TestDropout
-	want := map[int][3]float64{0: {1, 0.2, 0}, 1: {0, 0.2, 0}, 7: {0.7, 1, 0}, 18: {0.7, 0.2, 0.8}, 23: {1, 2, 0.8}}
+	// job index: Decay, Noise, TestNoise, TestDropout
+	want := map[int][4]float64{0: {1, 0.2, 0, 0}, 1: {1, 0.2, 0.25, 0}, 8: {0.5, 0.2, 1, 0}, 18: {1, 0, 0.5, 0}, 21: {0.5, 0.2, 1, 0.6}}
 	for at, w := range want {
 		cfg, _ := egui.NewConfig[Config]()
 		cfg.GUI = false
@@ -100,10 +99,44 @@ func TestSearch(t *testing.T) {
 			if ly.Type != egomlx.Hidden {
 				continue
 			}
-			if n, d := ly.Params.Act.Noise, ly.Params.Act.TestDropout; n != w[1] || d != w[2] {
-				t.Errorf("job %d: %s Noise, TestDropout = %g, %g, want %g, %g", at+1, ly.Name, n, d, w[1], w[2])
+			ap := ly.Params.Act
+			if got := [3]float64{ap.Noise, ap.TestNoise, ap.TestDropout}; got != [3]float64(w[1:]) {
+				t.Errorf("job %d: %s Noise, TestNoise, TestDropout = %v, want %v", at+1, ly.Name, got, w[1:])
 			}
 		}
+	}
+}
+
+// TestTestNoise checks that TestNoise makes the test choices vary across
+// the repetitions of the same item, without changing training: with
+// Noise 0, the choices are fully consistent (TieConsist 1), and with
+// TestNoise they are not, while the training MatchCos is the same.
+func TestTestNoise(t *testing.T) {
+	cons := map[float64]float64{}
+	trn := map[float64]float64{}
+	for _, tn := range []float64{0, 2} {
+		cfg, _ := egui.NewConfig[Config]()
+		cfg.GUI = false
+		cfg.Run.NData = 16
+		cfg.Run.Trials = 128
+		cfg.Run.Epochs = 2
+		cfg.Run.Runs = 1
+		cfg.Params.Noise = 0
+		cfg.Params.TestNoise = tn
+		ss := &Sim{}
+		ss.SetConfig(cfg)
+		ss.ConfigSim()
+		ss.Loops.Run(Train)
+		run := ss.Stats.Dir("Train/Run")
+		cons[tn] = run.Float64("Test_Consist").Float1D(-1)
+		trn[tn] = run.Float64("MatchCos").Float1D(-1)
+		t.Logf("TestNoise %g: Consist %.3f, TieConsist %.3f, train MatchCos %.3f", tn, cons[tn], run.Float64("Test_TieConsist").Float1D(-1), run.Float64("MatchCos").Float1D(-1))
+	}
+	if cons[0] != 1 || !(cons[2] < 0.99) {
+		t.Errorf("Test_Consist: %v, want 1 without TestNoise and less with it", cons)
+	}
+	if trn[0] != trn[2] {
+		t.Errorf("TestNoise changed the training MatchCos: %v", trn)
 	}
 }
 

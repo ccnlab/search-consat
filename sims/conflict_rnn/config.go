@@ -67,6 +67,13 @@ type ParamConfig struct {
 	// (each trial starts from zero activity, with no carryover).
 	Noise float64 `default:"0.2"`
 
+	// TestNoise is the standard deviation of additional Gaussian noise
+	// added to the net input of the hidden layers on every cycle, in
+	// testing only, as TestDropout is to Dropout: the network learns to
+	// override the training Noise, but not this. It is independent of
+	// Noise, so the total SD in testing is sqrt(Noise^2 + TestNoise^2).
+	TestNoise float64
+
 	// Decay is the proportion of the final activity of the previous trial
 	// that decays before the next trial: the first cycle starts from
 	// (1 - Decay) times that activity, so the previous trial carries over

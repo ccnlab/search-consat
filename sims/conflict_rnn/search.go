@@ -19,13 +19,92 @@ import (
 //
 //	./conflict_rnn/conflict_rnn -nogui -search-n
 //
-// After SearchPS1, where carryover (Decay) was the only way to grade the
-// majority choice (by perseveration), and Noise and TestDropout only made
-// the choices noisy, this searches Decay below .5, and Decay combined
-// with Noise or TestDropout, to see whether the noise breaks up the
-// perseveration into more independent graded choices. The combinations
-// set two fields per job, with the fixed one in the label (Sel).
+// After SearchPS2, where the training Noise made the choices more
+// deterministic (the network learns to override it), this searches
+// TestNoise: noise in testing only, which the network has not learned to
+// override, alone and with carryover (Decay), with the training Noise at
+// 0, and with the best combination so far (Decay .5, TestDropout .6),
+// which is also rerun (without the training leak, see SearchPS2).
+// The combinations set the fixed fields in each job, which are in the
+// label (Sel).
 var Search = params.Searches[*Config]{
+	// job 1: the base config, with the same args as the other jobs
+	params.Baseline[*Config](),
+
+	// test-only noise, on top of the training Noise (.2)
+	{Sel: "Params.TestNoise", Set: func(cfg *Config, v float32) {
+		cfg.Params.TestNoise = params.Float64(v)
+	}, Vals: func() []float32 {
+		return []float32{0.25, 0.5, 1, 2, 4}
+	}},
+
+	// with carryover: Decay .5 was the most graded (perseverative), .7
+	// less so, and .3 less graded but not perseverative
+	decayWith(0.5, "TestNoise", setTestNoise, []float32{0.25, 0.5, 1, 2}),
+	decayWith(0.7, "TestNoise", setTestNoise, []float32{0.25, 0.5, 1, 2}),
+	decayWith(0.3, "TestNoise", setTestNoise, []float32{0.5, 1, 2}),
+
+	// without training noise, so that the network has learned to override
+	// no noise at all
+	{Sel: "Noise=0,TestNoise", Set: func(cfg *Config, v float32) {
+		cfg.Params.Noise = 0
+		cfg.Params.TestNoise = params.Float64(v)
+	}, Vals: func() []float32 {
+		return []float32{0.25, 0.5, 1}
+	}},
+
+	// with the best combination of SearchPS2
+	{Sel: "Decay=0.5,TestDropout=0.6,TestNoise", Set: func(cfg *Config, v float32) {
+		cfg.Params.Decay = 0.5
+		cfg.Params.TestDropout = 0.6
+		cfg.Params.TestNoise = params.Float64(v)
+	}, Vals: func() []float32 {
+		return []float32{0.5, 1}
+	}},
+
+	// reruns of SearchPS2 jobs: with carryover, the test dropout used to
+	// leak into training (egomlx TrainTrial ran its forward pass with it,
+	// and that activity was carried over to the next trial), so these are
+	// now with the test dropout in testing only
+	decayWith(0.5, "TestDropout", func(cfg *Config, v float32) {
+		cfg.Params.TestDropout = params.Float64(v)
+	}, []float32{0.6, 0.8}),
+}
+
+// setTestNoise sets the TestNoise, for [decayWith].
+func setTestNoise(cfg *Config, v float32) {
+	cfg.Params.TestNoise = params.Float64(v)
+}
+
+// decayWith returns a search over the values of another parameter, set
+// by set, with Decay at the given value, labeled Decay=decay,name=value.
+func decayWith(decay float32, name string, set func(cfg *Config, v float32), vals []float32) *params.Search[*Config] {
+	return &params.Search[*Config]{Sel: fmt.Sprintf("Decay=%g,%s", decay, name), Set: func(cfg *Config, v float32) {
+		cfg.Params.Decay = params.Float64(decay)
+		set(cfg, v)
+	}, Vals: func() []float32 { return vals }}
+}
+
+// SearchPS2 is the second search that was run (psearch2, 24 jobs:
+// conflict_rnn ore00034-57, 10 runs each), kept for the record. Results:
+//   - Decay 0-.4 (strong carryover) was less graded than .5-.65 (In67 .95
+//     at 0, .875 at .3-.4) but not perseverative (MinorPrevMinor about the
+//     minority rate), with competition (LeadSwaps .4-.8, CommitCyc 25-30).
+//   - Noise (in training and testing) with Decay made the choices more
+//     deterministic (Decay .7: In67 .87 -> 1.0 at Noise 2): the network
+//     learns to override the noise, and the carryover with it.
+//   - Decay .5 with TestDropout .6 broke up the perseveration (In67 .88,
+//     Intrusion .016, RepeatPrev .74, MinorPrevMinor .13 vs In33 .12,
+//     LeadSwaps .74); more TestDropout only added noise (intrusions).
+//     But the Decay x TestDropout jobs trained with the test dropout in
+//     the carried-over activity (egomlx TrainTrial ran its forward pass
+//     with it, since fixed), so they are not test-only results.
+//
+// It searched Decay below .5, and Decay combined with Noise or
+// TestDropout, after SearchPS1, where carryover (Decay) was the only way
+// to grade the majority choice (by perseveration), to see whether the
+// noise breaks up the perseveration into more independent graded choices.
+var SearchPS2 = params.Searches[*Config]{
 	// job 1: the base config, with the same args as the other jobs
 	params.Baseline[*Config](),
 
@@ -68,15 +147,6 @@ var Search = params.Searches[*Config]{
 	}, Vals: func() []float32 {
 		return []float32{0.7, 0.8}
 	}},
-}
-
-// decayWith returns a search over the values of another parameter, set
-// by set, with Decay at the given value, labeled Decay=decay,name=value.
-func decayWith(decay float32, name string, set func(cfg *Config, v float32), vals []float32) *params.Search[*Config] {
-	return &params.Search[*Config]{Sel: fmt.Sprintf("Decay=%g,%s", decay, name), Set: func(cfg *Config, v float32) {
-		cfg.Params.Decay = params.Float64(decay)
-		set(cfg, v)
-	}, Vals: func() []float32 { return vals }}
 }
 
 // SearchPS1 is the first search that was run (psearch1, 30 jobs:

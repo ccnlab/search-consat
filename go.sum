@@ -70,8 +70,8 @@ github.com/dlclark/regexp2/v2 v2.7.1 h1:yqDtwI1ptXXvEUNpYTk2lad4jLtAcKqkzepn4sav
 github.com/dlclark/regexp2/v2 v2.7.1/go.mod h1:avUrQvPaLz2DrFNHJF0taWAFFX2C1GMSSoeiqFjcBmU=
 github.com/emer/axon/v2 v2.0.17 h1:+eajOnByWhjKcVc0+0cgqn53TOhILWQfzeY/Q9nzhow=
 github.com/emer/axon/v2 v2.0.17/go.mod h1:Ycn364i0wdOZN+Xssm7AXXj+7ktTpmINhkxxLEH7n+U=
-github.com/emer/egomlx v0.1.6 h1:UTS1rEJJjkfrQyp391OBLKmCJTq9xwtqa5DUH4q0T0g=
-github.com/emer/egomlx v0.1.6/go.mod h1:aeBhRqPCwZVsEwCVFxeZJXh49p/uUOQZsrrpTBo1JQY=
+github.com/emer/egomlx v0.1.7 h1:3y+Df9AaGDGYIfFP8ITQz4RnzWu3ainQ3Ag/6eSqo+8=
+github.com/emer/egomlx v0.1.7/go.mod h1:aeBhRqPCwZVsEwCVFxeZJXh49p/uUOQZsrrpTBo1JQY=
 github.com/emer/emergent/v2 v2.0.8 h1:XZrXfXTqoo9My4NvtxdTrQT0TU+9JQuS+vxr092uvbk=
 github.com/emer/emergent/v2 v2.0.8/go.mod h1:syd+nNU/81UMwm8+GcWzHNbH0C4cCOMYrDhmDjz+BwQ=
 github.com/faiface/beep v1.1.0 h1:A2gWP6xf5Rh7RG/p9/VAW2jRSDEGQm5sbOb38sf5d4c=

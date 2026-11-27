@@ -19,15 +19,74 @@ import (
 //
 //	./conflict_rnn/conflict_rnn -nogui -search-n
 //
-// After SearchPS2, where the training Noise made the choices more
-// deterministic (the network learns to override it), this searches
-// TestNoise: noise in testing only, which the network has not learned to
-// override, alone and with carryover (Decay), with the training Noise at
-// 0, and with the best combination so far (Decay .5, TestDropout .6),
-// which is also rerun (without the training leak, see SearchPS2).
+// After SearchPS3, where TestNoise (with Decay 1) gave minority choices
+// that were independent of the previous choice, with competition, from
+// TestNoise 2 (In67 .95, Intrusion .005) to 4 (In67 .68, but Intrusion
+// .68), this maps TestNoise from 2 to 4, and tries to keep the intrusions
+// down at high noise: with lateral connections (cleanup), more or fewer
+// settling cycles (averaging the noise), training noise (learning to
+// override it) and some carryover (Decay .3).
 // The combinations set the fixed fields in each job, which are in the
 // label (Sel).
 var Search = params.Searches[*Config]{
+	// job 1: the base config, with the same args as the other jobs
+	params.Baseline[*Config](),
+
+	// test-only noise between 2 and 4 (Decay 1, training Noise .2)
+	{Sel: "Params.TestNoise", Set: func(cfg *Config, v float32) {
+		cfg.Params.TestNoise = params.Float64(v)
+	}, Vals: func() []float32 {
+		return params.Range(2.25, 3.5, 0.25)
+	}},
+
+	// cleanup by lateral connections, which had no effect without noise
+	testNoiseWith("OutputLateral=true", func(cfg *Config) { cfg.Params.OutputLateral = true }, []float32{2, 3, 4}),
+	testNoiseWith("Lateral=true", func(cfg *Config) { cfg.Params.Lateral = true }, []float32{2, 3, 4}),
+
+	// settling cycles: noise in each cycle, averaged over more cycles
+	testNoiseWith("NCycles=20", func(cfg *Config) { cfg.Params.NCycles = 20 }, []float32{2, 3, 4}),
+	testNoiseWith("NCycles=5", func(cfg *Config) { cfg.Params.NCycles = 5 }, []float32{2, 3}),
+
+	// more training noise, to learn to override noise
+	testNoiseWith("Noise=1", func(cfg *Config) { cfg.Params.Noise = 1 }, []float32{3, 4}),
+
+	// some carryover (Decay .3 was not perseverative)
+	decayWith(0.3, "TestNoise", setTestNoise, []float32{3, 4}),
+}
+
+// testNoiseWith returns a search over TestNoise values, with the fixed
+// settings applied by fix, labeled fixed,TestNoise=value.
+func testNoiseWith(fixed string, fix func(cfg *Config), vals []float32) *params.Search[*Config] {
+	return &params.Search[*Config]{Sel: fixed + ",TestNoise", Set: func(cfg *Config, v float32) {
+		fix(cfg)
+		setTestNoise(cfg, v)
+	}, Vals: func() []float32 { return vals }}
+}
+
+// SearchPS3 is the third search that was run (psearch3, 24 jobs:
+// conflict_rnn ore00058-81, 10 runs each), kept for the record. Results:
+//   - TestNoise alone (Decay 1) had no effect on the choice up to 1 (In67
+//     1.0, only TieConsist went down), and at 2 gave In67 .95, Intrusion
+//     .005, with minority choices independent of the previous choice
+//     (MinorPrevMinor .024 vs MinorPrevMajor .022, RepeatPrev .50) and
+//     competition (LeadSwaps 1.1, CommitCyc 55 vs 16). At 4: In67 .68,
+//     MatchCenter 1.08, but Intrusion .68.
+//   - The training Noise made no difference (Noise 0 = Noise .2).
+//   - With Decay .5 or .7, TestNoise made the choice LESS graded (Decay .5:
+//     In67 .79 -> .96 from TestNoise .25 to 1), by breaking up the
+//     perseveration (MinorPrevMinor .46 -> .07). At TestNoise 2, Decay
+//     .3-1 all gave In67 .93-.95 and RepeatPrev .5: the noise overrides
+//     the carryover.
+//   - Clean reruns (without the training leak) of Decay .5 with
+//     TestDropout .6: In67 .87, Intrusion .047, RepeatPrev .76,
+//     MinorPrevMinor .17 vs .03 (still perseverative); TestDropout .8:
+//     In67 .91, Intrusion .08.
+//
+// It searched TestNoise (noise in testing only), alone and with
+// carryover (Decay), with the training Noise at 0, and with Decay .5,
+// TestDropout .6, which was also rerun without the training leak.
+var SearchPS3 = params.Searches[*Config]{
+
 	// job 1: the base config, with the same args as the other jobs
 	params.Baseline[*Config](),
 

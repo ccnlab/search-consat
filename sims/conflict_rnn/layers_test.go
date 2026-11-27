@@ -70,16 +70,22 @@ func TestLayerConfigs(t *testing.T) {
 // the config, and from there to the network, as RunNoGUI does.
 func TestSearch(t *testing.T) {
 	lbls := Search.Labels()
-	if len(lbls) != 24 || len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: Params.TestNoise=0.25" || lbls[8] != "Search 9: Decay=0.5,TestNoise=1" || lbls[18] != "Search 19: Noise=0,TestNoise=0.5" || lbls[21] != "Search 22: Decay=0.5,TestDropout=0.6,TestNoise=1" || lbls[23] != "Search 24: Decay=0.5,TestDropout=0.8" {
+	if len(lbls) != 22 || len(lbls) != Search.NumParams() || lbls[0] != "Search 1: Baseline" || lbls[1] != "Search 2: Params.TestNoise=2.25" || lbls[6] != "Search 7: Params.TestNoise=3.5" || lbls[8] != "Search 9: OutputLateral=true,TestNoise=3" || lbls[15] != "Search 16: NCycles=20,TestNoise=4" || lbls[18] != "Search 19: Noise=1,TestNoise=3" || lbls[21] != "Search 22: Decay=0.3,TestNoise=4" {
 		t.Fatalf("Search labels: %q", lbls)
 	}
-	for nm, n := range map[string]int{"SearchPS2": SearchPS2.NumParams(), "SearchPS1": SearchPS1.NumParams(), "Search1": Search1.NumParams()} {
-		if want := map[string]int{"SearchPS2": 24, "SearchPS1": 30, "Search1": 43}[nm]; n != want {
+	for nm, n := range map[string]int{"SearchPS3": SearchPS3.NumParams(), "SearchPS2": SearchPS2.NumParams(), "SearchPS1": SearchPS1.NumParams(), "Search1": Search1.NumParams()} {
+		if want := map[string]int{"SearchPS3": 24, "SearchPS2": 24, "SearchPS1": 30, "Search1": 43}[nm]; n != want {
 			t.Errorf("%s has %d jobs, want %d", nm, n, want)
 		}
 	}
 	// job index: Decay, Noise, TestNoise, TestDropout
-	want := map[int][4]float64{0: {1, 0.2, 0, 0}, 1: {1, 0.2, 0.25, 0}, 8: {0.5, 0.2, 1, 0}, 18: {1, 0, 0.5, 0}, 21: {0.5, 0.2, 1, 0.6}}
+	want := map[int][4]float64{0: {1, 0.2, 0, 0}, 1: {1, 0.2, 2.25, 0}, 8: {1, 0.2, 3, 0}, 10: {1, 0.2, 2, 0}, 15: {1, 0.2, 4, 0}, 18: {1, 1, 3, 0}, 21: {0.3, 0.2, 4, 0}}
+	// job index: OutputLateral, Lateral, NCycles
+	type netCfg struct {
+		outLat, lat bool
+		ncyc        int
+	}
+	wantNet := map[int]netCfg{0: {false, false, 10}, 8: {true, false, 10}, 10: {false, true, 10}, 15: {false, false, 20}}
 	for at, w := range want {
 		cfg, _ := egui.NewConfig[Config]()
 		cfg.GUI = false
@@ -90,6 +96,12 @@ func TestSearch(t *testing.T) {
 		ss.ConfigSim()
 		if ss.searchErr != nil || ss.searchLabel != lbls[at] {
 			t.Fatalf("search job %d: %q %v", at+1, ss.searchLabel, ss.searchErr)
+		}
+		if wn, ok := wantNet[at]; ok {
+			pc := &ss.Config.Params
+			if got := (netCfg{pc.OutputLateral, pc.Lateral, pc.NCycles}); got != wn {
+				t.Errorf("job %d: OutputLateral, Lateral, NCycles = %v, want %v", at+1, got, wn)
+			}
 		}
 		ss.Init()
 		if ss.Net.Params.Decay != w[0] {
